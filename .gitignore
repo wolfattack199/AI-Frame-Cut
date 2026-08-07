@@ -1,0 +1,18 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+uv.lock
+
+# Media artifacts (don't commit test renders)
+*.mp4
+*.mov
+*.mkv
+*.gif
+*.mp3
+*_contact.png
+*_frames/
+!examples/**
