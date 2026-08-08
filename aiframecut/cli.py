@@ -14,6 +14,7 @@ from . import __version__
 from ._ffmpeg import (FFMPEG, FFPROBE, ffmpeg, probe, fmt_tc, default_out, run, grab_frame)
 from .titles import build_contact_sheet, make_title_card
 from .transcribe import transcribe_file
+from .web import fetch_channel
 
 # One-word color grades. Each value is an ffmpeg filter chain (no scaling/letterbox;
 # those are added by the grade command from flags).
@@ -334,8 +335,64 @@ def cmd_title(a):
                     style=a.style, size=tuple(int(x) for x in a.size.lower().split("x")),
                     fps=a.fps, letterbox=a.letterbox,
                     flicker=(None if a.flicker == "auto" else a.flicker == "on"),
-                    audio=not a.silent, crf=a.crf, preset=a.preset)
-    print(f"title card '{a.text}' ({a.seconds:g}s, style {a.style}) -> {a.out}")
+                    audio=not a.silent, crf=a.crf, preset=a.preset,
+                    logo=a.logo, cta=a.cta)
+    print(f"title card '{a.text}' ({a.seconds:g}s, style {a.style})"
+          + (", +logo" if a.logo else "") + (f", cta '{a.cta}'" if a.cta else "")
+          + f" -> {a.out}")
+
+
+def cmd_preview(a):
+    """Fast, small, low-res proxy so the user can quickly SEE the current state."""
+    out = a.out or default_out(a.video, "_preview.mp4")
+    ffmpeg(["-i", str(a.video), "-vf", f"scale=-2:{a.height}:flags=bilinear",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", str(a.crf), "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "96k", out])
+    mb = Path(out).stat().st_size / 1048576
+    print(f"preview ({a.height}p, fast proxy) -> {out}  ({mb:.1f} MB)")
+
+
+def cmd_music(a):
+    """Mix a background music track under the video (optional ducking under speech)."""
+    if not Path(a.track).exists():
+        sys.exit(f"[aiframecut] music track not found: {a.track}")
+    out = a.out or default_out(a.video, "_music.mp4")
+    info = probe(a.video)
+    vdur = info["duration"]
+    m = [f"volume={a.volume}"]
+    if a.fade > 0:
+        m.append(f"afade=t=in:st=0:d={a.fade}")
+        m.append(f"afade=t=out:st={max(0.1, vdur - a.fade):.2f}:d={a.fade}")
+    mchain = ",".join(m)
+    if info["has_audio"] and a.duck:
+        fc = (f"[1:a]{mchain}[m];"
+              f"[m][0:a]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=350[md];"
+              f"[0:a][md]amix=inputs=2:duration=first:dropout_transition=0,volume=1.5[a]")
+    elif info["has_audio"]:
+        fc = f"[1:a]{mchain}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]"
+    else:
+        fc = f"[1:a]{mchain}[a]"
+    ffmpeg(["-i", str(a.video), "-stream_loop", "-1", "-i", str(a.track),
+            "-filter_complex", fc, "-map", "0:v", "-map", "[a]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-shortest", out])
+    print(f"music mixed{' (ducked under speech)' if (a.duck and info['has_audio']) else ''} -> {out}")
+
+
+def cmd_channel(a):
+    """Grab a PUBLIC YouTube channel's avatar + name (no API key) for branding."""
+    outdir = a.out or "channel_assets"
+    res = fetch_channel(a.target, outdir)
+    print(f"channel: {res['name'] or '(name not found)'}")
+    print(f"url:     {res['channel_url']}")
+    if res["avatar_file"]:
+        print(f"avatar:  {res['avatar_file']}")
+        nm = (res["name"] or "MY CHANNEL").upper()
+        print("\nMake a branded outro with it:")
+        print(f'  aiframecut title --text "{nm}" --cta "SUBSCRIBE & LIKE" '
+              f'--logo "{res["avatar_file"]}" --style clean --seconds 5 -o outro.mp4')
+    else:
+        print("avatar:  (the channel page didn't expose a downloadable avatar)")
 
 
 def cmd_transcribe(a):
@@ -492,6 +549,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--size", default="1920x1080"); sp.add_argument("--fps", type=int, default=60)
     sp.add_argument("--letterbox", type=float, default=0.07)
     sp.add_argument("--flicker", default="auto", choices=["auto", "on", "off"])
+    sp.add_argument("--logo", help="path to a logo / channel-avatar image to show on the card")
+    sp.add_argument("--cta", help="call-to-action pill, e.g. 'SUBSCRIBE & LIKE'")
     sp.add_argument("--silent", action="store_true", help="no rumble bed"); enc(sp)
     sp.set_defaults(func=cmd_title)
 
@@ -513,6 +572,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("scenes", help="detect scene-change cut points (smart alternative to dumping frames)")
     sp.add_argument("video"); sp.add_argument("--threshold", type=float, default=0.3)
     sp.set_defaults(func=cmd_scenes)
+
+    sp = sub.add_parser("preview", help="fast low-res proxy so the user can quickly SEE the current state")
+    sp.add_argument("video"); sp.add_argument("-o", "--out")
+    sp.add_argument("--height", type=int, default=480); sp.add_argument("--crf", type=int, default=30)
+    sp.set_defaults(func=cmd_preview)
+
+    sp = sub.add_parser("music", help="mix a background music track under the video (optional ducking)")
+    sp.add_argument("video"); sp.add_argument("--track", required=True, help="music/audio file")
+    sp.add_argument("--volume", type=float, default=0.22); sp.add_argument("--fade", type=float, default=2.0)
+    sp.add_argument("--duck", action="store_true", help="dip the music under speech (sidechain)")
+    sp.add_argument("-o", "--out")
+    sp.set_defaults(func=cmd_music)
+
+    sp = sub.add_parser("channel", help="grab a PUBLIC YouTube channel's avatar + name (no API key)")
+    sp.add_argument("target", help="channel URL or @handle")
+    sp.add_argument("-o", "--out", help="output dir for the avatar (default: channel_assets)")
+    sp.set_defaults(func=cmd_channel)
 
     return p
 

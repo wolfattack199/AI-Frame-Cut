@@ -1,6 +1,6 @@
 ---
 name: ai-frame-cut
-description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video instantly as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" trigger detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, and voice/audio effects. Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
+description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, and quick previews so the user can watch progress. Can grab a PUBLIC YouTube channel's avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
 ---
 
 # AI Frame Cut
@@ -8,6 +8,23 @@ description: Fast, local, no-API-key video editing for gameplay, screen recordin
 **Give Claude & ChatGPT eyes, ears, and fast hands for video.** A thin ffmpeg +
 Whisper wrapper built for an AI workflow: look first, then edit with tiny commands.
 Local, no API keys, no cloud.
+
+## Start here: work WITH the user (do this EVERY time)
+
+The user often can't see what you're doing. So don't edit blind and don't disappear:
+
+1. **Interview first.** Before touching the video, ask what they're picturing:
+   - Where is it going? (YouTube / Shorts / TikTok — sets aspect ratio + length)
+   - Vibe / mood? Any reference they like?
+   - Intro and/or outro? A **channel name / @handle** to brand them with?
+   - **Background music**? A **Subscribe/Like** call-to-action?
+   - Anything specific to cut, or spoken "edit this out" moments to find?
+2. **Show a short plan** — the steps you'll run — and get a quick nod.
+3. **Edit step-by-step and let them WATCH.** After each meaningful step, run `preview`
+   (a fast low-res proxy) or `contact` on the current output and **show it**, saying what
+   you just did. That is how the user "watches it edit" — surface progress, don't vanish
+   for ten minutes. Long renders → run in the background and `preview` when done.
+4. **Iterate.** They react to each preview; adjust and keep going.
 
 ## The golden loop
 
@@ -43,11 +60,14 @@ whether NVIDIA `--gpu` encoding is available.
 | `thumb VIDEO --at 42 [--width]` | one frame at a timestamp |
 | `transcribe VIDEO [--model base] [--lang en] [--find "phrase,..."] [--device cpu\|cuda]` | on-device Whisper → `.srt/.txt/.json` + spoken **edit-word** marks |
 | `grade VIDEO [--look cinematic] [--height 1080] [--letterbox 0.07] [--fps] [--gpu]` | one-word color grade |
-| `title --text "LIGHTS OUT" [--sub "..."] [--seconds 6] [--style horror] [--size 1920x1080] [--letterbox 0.07] [--silent] -o OUT.mp4` | animated intro/outro card |
+| `title --text "..." [--sub "..."] [--cta "SUBSCRIBE & LIKE"] [--logo avatar.png] [--seconds 6] [--style horror] [--size 1920x1080] [--letterbox 0.07] [--silent] -o OUT.mp4` | animated intro/outro card — add `--logo` for a circular channel avatar and `--cta` for a Subscribe/Like pill |
 | `trim VIDEO --start 25 [--end 60] [--reencode]` | cut one span. Default **keyframe-instant**; `--reencode` for frame-accuracy |
 | `cut VIDEO --keep 5-12,40-55` | keep + join highlight segments (frame-accurate) |
 | `concat OUT CLIP1 CLIP2 ...` | join clips (stream-copy if compatible, else re-encode) |
 | `voice VIDEO --effect deep [--volume 1.0]` | voice-changer / audio effects (video copied, audio only — fast) |
+| `music VIDEO --track song.mp3 [--duck] [--volume 0.22] [--fade 2]` | mix background music under the video; `--duck` dips it under speech |
+| `preview VIDEO [--height 480]` | **fast low-res proxy** — make one after each step and SHOW the user so they watch progress |
+| `channel URL_or_@handle [-o DIR]` | grab a PUBLIC YouTube channel's avatar + name (no API key) → `channel_assets/channel_avatar.png` |
 | `speed VIDEO --factor 2.0 [--mute]` | speed up / slow down, pitch-preserved |
 | `resize VIDEO --height 1080` / `gif VIDEO --start --end` / `audio VIDEO` | rescale / gif / extract mp3 |
 | `doctor` | check ffmpeg, Whisper, GPU, and list looks/styles/voices |
@@ -82,6 +102,17 @@ aiframecut transcribe raw.mp4               # reports edit-marks with suggested 
 (downscaling is the biggest speed + filesize win; add `--gpu` if available). Launch long
 renders in the background and verify with `contact` when done.
 
+**"Edit this for YouTube — branded intro/outro + music":**
+```
+aiframecut channel @theirhandle                       # -> channel_assets/channel_avatar.png + name
+aiframecut title --text "THEIR CHANNEL" --logo channel_assets/channel_avatar.png --style clean --seconds 5 -o intro.mp4
+# ...build the graded body (see the cinematic recipe above)...
+aiframecut title --text "THANKS FOR WATCHING" --cta "SUBSCRIBE & LIKE" --logo channel_assets/channel_avatar.png --style clean --flicker off -o outro.mp4
+aiframecut concat joined.mp4 intro.mp4 body.mp4 outro.mp4
+aiframecut music joined.mp4 --track music.mp3 --duck -o final.mp4    # music under everything, ducked under speech
+aiframecut preview final.mp4 -o final_preview.mp4                    # then SHOW this to the user
+```
+
 ## Rules that keep output correct
 
 - **Look before you cut.** Always `contact`/`probe` first. Screen recordings often start on
@@ -96,3 +127,5 @@ renders in the background and verify with `contact` when done.
 - **Transcription needs speech.** Whisper's voice-activity filter returns 0 segments on pure
   game/ambient audio — that's correct, not a bug.
 - **Verify before you present.** Read a `thumb`/`contact` of the final render.
+- **`channel` is the only online feature.** It reads a PUBLIC YouTube page (no login, no API key) for an avatar + name. Ask the user for their channel URL/@handle and only fetch what they give you.
+- **Music needs a track the user provides** (a file path). The tool mixes / ducks / fades it — it doesn't source or generate music itself.

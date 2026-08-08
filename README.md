@@ -15,11 +15,17 @@ It solves three problems an AI has with video:
    `.srt/.txt/.json` transcripts, and flags spoken **"edit this out"** moments so the
    agent knows where to cut.
 3. **Editing it, fast.** One-line commands: cinematic color grade, animated intro/outro
-   titles, instant keyframe trims, highlight cuts, concat, speed, resize, gif, and
-   voice/audio effects. Optional **NVIDIA `--gpu`** encoding.
+   titles (optionally with your **channel avatar + a Subscribe/Like** pill), **background
+   music** with auto-ducking, instant keyframe trims, highlight cuts, concat, speed, resize,
+   gif, and voice/audio effects. Optional **NVIDIA `--gpu`** encoding.
+4. **Working with you.** It's built to **interview you first** (what's it for, intro/outro,
+   music, CTAs), then edit step-by-step and hand you a fast **`preview`** after each step so
+   you watch the edit take shape. It can even grab a **public YouTube channel's avatar +
+   name** (no API key) to brand your intro/outro.
 
-So you can say *"make this gameplay clip cinematic, give it an intro, and cut the boring
-parts I flagged"* — and the agent looks, listens, and does it, even on 8-minute videos.
+So you can say *"edit this gameplay for YouTube — clean intro with my channel logo, some
+music, cut the boring parts, and a Subscribe outro"* — and the agent asks what you're
+picturing, then looks, listens, and builds it, showing you previews along the way.
 
 > **Honest speed note:** re-encoding a long/4K video takes *minutes, not seconds* — that's
 > the CPU compressing every frame. What's instant: seeing it, and keyframe copy-cuts.
@@ -59,7 +65,7 @@ See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 ## Commands
 
 `probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `grade` · `title` ·
-`trim` · `cut` · `concat` · `voice` · `speed` · `resize` · `gif` · `audio` · `doctor`
+`trim` · `cut` · `concat` · `voice` · `music` · `preview` · `channel` · `speed` · `resize` · `gif` · `audio` · `doctor`
 
 - **Grade looks:** `cinematic`, `noir`, `warm`, `cold`, `vhs`, `clean`
 - **Title styles:** `horror`, `clean`, `glitch`, `warm`

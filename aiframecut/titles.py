@@ -55,7 +55,7 @@ def build_contact_sheet(frames: list[Path], out: str, cols: int,
                         start: float, interval: float, gap: int = 6) -> str:
     """Tile frame images into a labeled grid (timecode stamped on each cell)."""
     if not frames:
-        raise SystemExit("[frameforge] no frames were extracted for the contact sheet.")
+        raise SystemExit("[aiframecut] no frames were extracted for the contact sheet.")
     thumbs = [Image.open(f).convert("RGB") for f in frames]
     tw, th = thumbs[0].size
     rows = math.ceil(len(thumbs) / cols)
@@ -88,7 +88,8 @@ _STYLES = {
 }
 
 
-def _make_assets(text: str, sub: str, size: tuple[int, int], style: str, tmp: Path):
+def _make_assets(text: str, sub: str, size: tuple[int, int], style: str, tmp: Path,
+                 logo: str | None = None, cta: str | None = None):
     W, H = size
     glow_rgb, _, _ = _STYLES.get(style, _STYLES["horror"])
     scale = H / 1080.0
@@ -115,42 +116,76 @@ def _make_assets(text: str, sub: str, size: tuple[int, int], style: str, tmp: Pa
     bg = Image.alpha_composite(bg.convert("RGBA"), scan).convert("RGB")
     bg.save(tmp / "bg.png")
 
-    # title (transparent) with soft glow
+    # foreground layer (transparent) — optional logo, title, subtitle, CTA pill
     title = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    has_logo = bool(logo and os.path.exists(logo))
+    if has_logo:
+        try:
+            d = int(232 * scale)
+            av = Image.open(logo).convert("RGBA").resize((d, d), Image.LANCZOS)
+            mask = Image.new("L", (d, d), 0)
+            ImageDraw.Draw(mask).ellipse([0, 0, d - 1, d - 1], fill=255)
+            lx, ly = (W - d) // 2, int(H * 0.12)
+            ring = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            ImageDraw.Draw(ring).ellipse([lx - 7, ly - 7, lx + d + 7, ly + d + 7],
+                                         outline=(*glow_rgb, 255), width=max(2, int(5 * scale)))
+            title = Image.alpha_composite(title, ring)
+            title.paste(av, (lx, ly), mask)
+        except Exception:
+            has_logo = False
+
+    tsize = int((132 if has_logo else 158) * scale)
+    tfont = find_font(tsize, bold=True)
+    tr = int(18 * scale)
     d0 = ImageDraw.Draw(title)
-    tfont = find_font(int(158 * scale), bold=True)
-    tr = int(20 * scale)
     tw = _tracked_width(d0, text, tfont, tr)
     tx = int((W - tw) / 2)
-    ty = int(H * 0.38)
+    ty = int(H * (0.46 if has_logo else 0.38))
     glay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     _draw_tracked(ImageDraw.Draw(glay), (tx, ty), text, tfont, (*glow_rgb, 255), tr)
     title = Image.alpha_composite(title, glay.filter(ImageFilter.GaussianBlur(int(20 * scale))))
     td = ImageDraw.Draw(title)
     _draw_tracked(td, (tx, ty), text, tfont, (238, 238, 240, 255), tr)
+
+    y_cursor = ty + tsize + int(44 * scale)
     if sub:
         sfont = find_font(int(40 * scale), bold=False)
         st = int(14 * scale)
         sw = _tracked_width(td, sub, sfont, st)
         sx = int((W - sw) / 2)
-        sy = ty + int(214 * scale)
         lw = int(300 * scale)
-        td.line([((W - lw) // 2, sy - int(30 * scale)), ((W + lw) // 2, sy - int(30 * scale))],
+        td.line([((W - lw) // 2, y_cursor - int(16 * scale)),
+                 ((W + lw) // 2, y_cursor - int(16 * scale))],
                 fill=(*[min(255, c + 30) for c in glow_rgb], 210), width=max(1, int(2 * scale)))
-        _draw_tracked(td, (sx, sy), sub, sfont, (168, 168, 172, 255), st)
+        _draw_tracked(td, (sx, y_cursor), sub, sfont, (168, 168, 172, 255), st)
+        y_cursor += int(78 * scale)
+
+    if cta:
+        cfont = find_font(int(46 * scale), bold=True)
+        ct = int(10 * scale)
+        ctext = cta.upper()
+        cw = _tracked_width(td, ctext, cfont, ct)
+        bx, by = int((W - cw) / 2), y_cursor + int(8 * scale)
+        pad_x, pad_y = int(34 * scale), int(16 * scale)
+        ImageDraw.Draw(title).rounded_rectangle(
+            [bx - pad_x, by - pad_y, bx + cw + pad_x, by + int(46 * scale) + pad_y],
+            radius=int(26 * scale), fill=(*glow_rgb, 235))
+        _draw_tracked(td, (bx, by), ctext, cfont, (255, 255, 255, 255), ct)
+
     title.save(tmp / "title.png")
 
 
 def make_title_card(out: str, text: str, sub: str = "", seconds: float = 6.0,
                     style: str = "horror", size=(1920, 1080), fps: int = 60,
                     letterbox: float = 0.07, flicker: bool | None = None,
-                    audio: bool = True, crf: int = 20, preset: str = "medium") -> str:
+                    audio: bool = True, crf: int = 20, preset: str = "medium",
+                    logo: str | None = None, cta: str | None = None) -> str:
     """Render an animated title / intro / outro card to an mp4."""
     _glow, style_flicker, grain = _STYLES.get(style, _STYLES["horror"])
     if flicker is None:
         flicker = style_flicker
     tmp = Path(tempfile.mkdtemp(prefix="ff_title_"))
-    _make_assets(text, sub, size, style, tmp)
+    _make_assets(text, sub, size, style, tmp, logo=logo, cta=cta)
 
     if flicker:
         appear = ("enable='between(t,1.15,1.22)+between(t,1.32,1.40)"
