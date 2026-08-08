@@ -66,7 +66,9 @@ See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 ## Commands
 
 `inspect` · `probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `grade` · `title` · `thumbnail` ·
-`trim` · `cut` · `concat` · `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` · `gif` · `audio` · `doctor`
+`trim` · `cut` · `concat` · `short` · `split` · `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` · `gif` · `audio` · `doctor`
+
+See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 
 - **Grade looks:** `cinematic`, `noir`, `warm`, `cold`, `vhs`, `clean`
 - **Title styles:** `horror`, `clean`, `glitch`, `warm`

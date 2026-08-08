@@ -1,6 +1,6 @@
 ---
 name: ai-frame-cut
-description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, YouTube thumbnails, and quick previews so the user can watch progress. It inspects the video first (contact sheet + review checklist) before asking how to edit, and can grab a PUBLIC YouTube / Steam / Roblox profile avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
+description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, YouTube thumbnails, vertical Shorts, long-video splitting, and quick previews so the user can watch progress. It inspects the video first (contact sheet + review checklist) before asking how to edit, and can grab a PUBLIC YouTube / Steam / Roblox profile avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
 ---
 
 # AI Frame Cut
@@ -75,6 +75,8 @@ whether NVIDIA `--gpu` encoding is available.
 | `profile URL_or_@handle_or_username [--platform auto]` (alias `channel`) | grab a PUBLIC avatar + name from **YouTube / Steam / Roblox** (or any og:image page) — no API key → `channel_assets/channel_avatar.png` |
 | `thumbnail VIDEO --text "..." [--sub "..."] [--at T] [--logo avatar.png] [--accent red]` | a **1280×720 YouTube thumbnail** from a frame + big outlined text + avatar badge |
 | `speed VIDEO --factor 2.0 [--mute]` | speed up / slow down, pitch-preserved |
+| `short VIDEO [--start --end] [--mode pad\|crop] [--max 60] [--title --tags --desc]` | make a 9:16 **YouTube Short/Reel** (`pad` = blurred bg, whole frame kept; `crop` = fill) + a metadata sidecar |
+| `split VIDEO [--minutes 5 \| --parts N]` | slice a **long video** into chunks + a `chunks.txt` manifest, to process piece by piece |
 | `resize VIDEO --height 1080` / `gif VIDEO --start --end` / `audio VIDEO` | rescale / gif / extract mp3 |
 | `doctor` | check ffmpeg, Whisper, GPU, and list looks/styles/voices |
 
@@ -135,3 +137,5 @@ aiframecut preview final.mp4 -o final_preview.mp4                    # then SHOW
 - **Verify before you present.** Read a `thumb`/`contact` of the final render.
 - **`profile`/`channel` is the only online feature.** It reads PUBLIC pages/APIs (YouTube og:image, the Steam profile page, the Roblox public API) — no login, no API key. Ask the user for their profile URL / @handle / username and only fetch what they give you.
 - **Music needs a track the user provides** (a file path). The tool mixes / ducks / fades it — it doesn't source or generate music itself.
+- **Long videos → `split` first.** For an hour-long stream, `split` it into chunks, then `inspect` / `transcribe` and pick highlights from each chunk before assembling. Don't try to process it all in one pass.
+- **Shorts:** pick a ≤60s moment, then `short` it (`--mode pad` keeps gameplay uncropped). Then propose a **title + tags + description** to the user, and save them with `--title/--tags/--desc`.

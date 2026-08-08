@@ -515,6 +515,59 @@ def cmd_scenes(a):
         print("  (none found — try a lower --threshold, e.g. 0.2)")
 
 
+def cmd_short(a):
+    """Convert a clip to a vertical 9:16 YouTube Short / Reel (blurred pad or crop)."""
+    info = probe(a.video)
+    start = a.start or 0.0
+    end = a.end if a.end is not None else info["duration"]
+    dur = min(max(0.1, end - start), a.max)
+    if a.mode == "crop":
+        fc = "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[v]"
+    else:  # pad — whole frame stays visible over a blurred fill
+        fc = ("[0:v]split=2[bg][fg];"
+              "[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=22[b];"
+              "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[f];"
+              "[b][f]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
+    out = a.out or default_out(a.video, "_short.mp4")
+    ffmpeg(["-ss", str(start), "-i", str(a.video), "-t", str(dur),
+            "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", *VENC(a), *AENC, out])
+    print(f"short (1080x1920, {a.mode}, {dur:.1f}s) -> {out}")
+    if a.title or a.tags or a.desc:
+        meta = Path(out).with_suffix(".txt")
+        blocks = []
+        if a.title:
+            blocks.append("TITLE:\n" + a.title)
+        if a.tags:
+            blocks.append("TAGS:\n" + ", ".join(t.strip() for t in a.tags.split(",")))
+        if a.desc:
+            blocks.append("DESCRIPTION:\n" + a.desc)
+        meta.write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+        print(f"metadata -> {meta}")
+
+
+def cmd_split(a):
+    """Split a long video into chunks + a manifest, so an AI can work through it piece by piece."""
+    dur = probe(a.video)["duration"]
+    seg = (dur / a.parts) if a.parts else (a.minutes * 60)
+    outdir = Path(a.out or default_out(a.video, "_chunks"))
+    outdir.mkdir(parents=True, exist_ok=True)
+    ffmpeg(["-i", str(a.video), "-c", "copy", "-map", "0", "-f", "segment",
+            "-segment_time", f"{seg:.3f}", "-reset_timestamps", "1",
+            str(outdir / "chunk_%03d.mp4")])
+    chunks = sorted(outdir.glob("chunk_*.mp4"))
+    lines, t = [], 0.0
+    for c in chunks:
+        d = probe(c)["duration"]
+        lines.append(f"{c.name}\t{fmt_tc(t)}-{fmt_tc(t + d)}\t{d:.1f}s")
+        t += d
+    (outdir / "chunks.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"split into {len(chunks)} chunks (~{seg / 60:.1f} min each) -> {outdir}")
+    for ln in lines:
+        print("  " + ln)
+    print("\nWork through them: `inspect` / `transcribe` each chunk, pick the good parts, "
+          "then `cut` / `concat` the keepers.")
+
+
 # --------------------------------------------------------------- parser ----
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -668,6 +721,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("video"); sp.add_argument("--count", type=int, default=30)
     sp.add_argument("-o", "--out", help="contact sheet path")
     sp.set_defaults(func=cmd_inspect)
+
+    sp = sub.add_parser("short", help="convert to a 9:16 YouTube Short/Reel (blurred pad or crop) + optional metadata")
+    sp.add_argument("video"); sp.add_argument("--start", type=float, default=0.0)
+    sp.add_argument("--end", type=float)
+    sp.add_argument("--mode", default="pad", choices=["pad", "crop"])
+    sp.add_argument("--max", type=float, default=60.0, help="max length in seconds (Shorts cap)")
+    sp.add_argument("--title"); sp.add_argument("--tags"); sp.add_argument("--desc")
+    sp.add_argument("-o", "--out"); enc(sp)
+    sp.set_defaults(func=cmd_short)
+
+    sp = sub.add_parser("split", help="split a long video into chunks (for feeding to an AI) + a manifest")
+    sp.add_argument("video")
+    g = sp.add_mutually_exclusive_group()
+    g.add_argument("--minutes", type=float, default=5.0, help="chunk length in minutes (default 5)")
+    g.add_argument("--parts", type=int, help="split into N equal parts")
+    sp.add_argument("-o", "--out", help="output dir (default: <video>_chunks)")
+    sp.set_defaults(func=cmd_split)
 
     return p
 
