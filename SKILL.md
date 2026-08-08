@@ -1,6 +1,6 @@
 ---
 name: ai-frame-cut
-description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, and quick previews so the user can watch progress. Can grab a PUBLIC YouTube channel's avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
+description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, YouTube thumbnails, and quick previews so the user can watch progress. It inspects the video first (contact sheet + review checklist) before asking how to edit, and can grab a PUBLIC YouTube / Steam / Roblox profile avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
 ---
 
 # AI Frame Cut
@@ -11,20 +11,24 @@ Local, no API keys, no cloud.
 
 ## Start here: work WITH the user (do this EVERY time)
 
-The user often can't see what you're doing. So don't edit blind and don't disappear:
+The user often can't see what you're doing, and may not even know what the video needs.
+So **watch it first, then ask** — never edit blind, never disappear:
 
-1. **Interview first.** Before touching the video, ask what they're picturing:
-   - Where is it going? (YouTube / Shorts / TikTok — sets aspect ratio + length)
-   - Vibe / mood? Any reference they like?
-   - Intro and/or outro? A **channel name / @handle** to brand them with?
-   - **Background music**? A **Subscribe/Like** call-to-action?
-   - Anything specific to cut, or spoken "edit this out" moments to find?
-2. **Show a short plan** — the steps you'll run — and get a quick nod.
-3. **Edit step-by-step and let them WATCH.** After each meaningful step, run `preview`
-   (a fast low-res proxy) or `contact` on the current output and **show it**, saying what
-   you just did. That is how the user "watches it edit" — surface progress, don't vanish
-   for ten minutes. Long renders → run in the background and `preview` when done.
-4. **Iterate.** They react to each preview; adjust and keep going.
+1. **WATCH the video FIRST.** Run `inspect VIDEO` — it gives the spec, a contact sheet to
+   Read, a scene count, and a review checklist. **Actually LOOK at the contact sheet.** If
+   there's speech, also `transcribe`.
+2. **Report what you saw, and offer choices — don't start editing.** Tell the user what's in
+   the video and proactively **flag anything to remove for privacy** (passwords / login
+   screens, real names, emails, phone numbers, home address, OBS or streamer dashboards,
+   other people, private tabs, DMs) plus obvious fixes (dead air, menus at the start, could
+   use captions). Then **ask how they want it edited** — e.g. *"remove the password, cut the
+   boring parts, add a Subscribe outro?"* Let them pick.
+3. **Capture their vision** if they haven't said: platform (YouTube / Shorts → aspect + length),
+   vibe, intro/outro, a **channel / Steam / Roblox** handle to brand with, music, CTAs.
+4. **Show a short plan**, then edit **step-by-step and let them WATCH** — after each meaningful
+   step run `preview` (or `contact`) on the output and **show it**, saying what you did. That
+   is how they "watch it edit." Long renders → run in the background and `preview` when done.
+5. **Iterate** on each preview.
 
 ## The golden loop
 
@@ -53,6 +57,7 @@ whether NVIDIA `--gpu` encoding is available.
 
 | Command | What it does |
 |---|---|
+| `inspect VIDEO` | **WATCH-FIRST bundle** — spec + contact sheet + scene count + a privacy/edit review checklist (run this before asking how to edit) |
 | `probe VIDEO [--json]` | duration, resolution, fps, codecs, audio, size |
 | `contact VIDEO [--count 30 \| --every 16] [--cols 6] [--tile-width 320] [--start --end]` | **labeled contact sheet** of the whole video → a PNG you Read to see it |
 | `scenes VIDEO [--threshold 0.3]` | detect scene-change timecodes (smart cut points, not thousands of frames) |
@@ -67,7 +72,8 @@ whether NVIDIA `--gpu` encoding is available.
 | `voice VIDEO --effect deep [--volume 1.0]` | voice-changer / audio effects (video copied, audio only — fast) |
 | `music VIDEO --track song.mp3 [--duck] [--volume 0.22] [--fade 2]` | mix background music under the video; `--duck` dips it under speech |
 | `preview VIDEO [--height 480]` | **fast low-res proxy** — make one after each step and SHOW the user so they watch progress |
-| `channel URL_or_@handle [-o DIR]` | grab a PUBLIC YouTube channel's avatar + name (no API key) → `channel_assets/channel_avatar.png` |
+| `profile URL_or_@handle_or_username [--platform auto]` (alias `channel`) | grab a PUBLIC avatar + name from **YouTube / Steam / Roblox** (or any og:image page) — no API key → `channel_assets/channel_avatar.png` |
+| `thumbnail VIDEO --text "..." [--sub "..."] [--at T] [--logo avatar.png] [--accent red]` | a **1280×720 YouTube thumbnail** from a frame + big outlined text + avatar badge |
 | `speed VIDEO --factor 2.0 [--mute]` | speed up / slow down, pitch-preserved |
 | `resize VIDEO --height 1080` / `gif VIDEO --start --end` / `audio VIDEO` | rescale / gif / extract mp3 |
 | `doctor` | check ffmpeg, Whisper, GPU, and list looks/styles/voices |
@@ -127,5 +133,5 @@ aiframecut preview final.mp4 -o final_preview.mp4                    # then SHOW
 - **Transcription needs speech.** Whisper's voice-activity filter returns 0 segments on pure
   game/ambient audio — that's correct, not a bug.
 - **Verify before you present.** Read a `thumb`/`contact` of the final render.
-- **`channel` is the only online feature.** It reads a PUBLIC YouTube page (no login, no API key) for an avatar + name. Ask the user for their channel URL/@handle and only fetch what they give you.
+- **`profile`/`channel` is the only online feature.** It reads PUBLIC pages/APIs (YouTube og:image, the Steam profile page, the Roblox public API) — no login, no API key. Ask the user for their profile URL / @handle / username and only fetch what they give you.
 - **Music needs a track the user provides** (a file path). The tool mixes / ducks / fades it — it doesn't source or generate music itself.

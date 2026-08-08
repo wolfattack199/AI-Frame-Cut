@@ -13,8 +13,9 @@ from pathlib import Path
 from . import __version__
 from ._ffmpeg import (FFMPEG, FFPROBE, ffmpeg, probe, fmt_tc, default_out, run, grab_frame)
 from .titles import build_contact_sheet, make_title_card
+from .thumbnail import make_thumbnail
 from .transcribe import transcribe_file
-from .web import fetch_channel
+from .web import fetch_profile
 
 # One-word color grades. Each value is an ffmpeg filter chain (no scaling/letterbox;
 # those are added by the grade command from flags).
@@ -379,20 +380,82 @@ def cmd_music(a):
     print(f"music mixed{' (ducked under speech)' if (a.duck and info['has_audio']) else ''} -> {out}")
 
 
-def cmd_channel(a):
-    """Grab a PUBLIC YouTube channel's avatar + name (no API key) for branding."""
+def cmd_profile(a):
+    """Grab a PUBLIC profile avatar + name (YouTube / Steam / Roblox / any og:image). No API key."""
     outdir = a.out or "channel_assets"
-    res = fetch_channel(a.target, outdir)
-    print(f"channel: {res['name'] or '(name not found)'}")
-    print(f"url:     {res['channel_url']}")
+    res = fetch_profile(a.target, outdir, platform=a.platform)
+    print(f"platform: {res['platform']}")
+    print(f"name:     {res['name'] or '(not found)'}")
+    print(f"url:      {res['profile_url']}")
     if res["avatar_file"]:
-        print(f"avatar:  {res['avatar_file']}")
+        print(f"avatar:   {res['avatar_file']}")
         nm = (res["name"] or "MY CHANNEL").upper()
-        print("\nMake a branded outro with it:")
+        print("\nUse it in a branded card:")
         print(f'  aiframecut title --text "{nm}" --cta "SUBSCRIBE & LIKE" '
               f'--logo "{res["avatar_file"]}" --style clean --seconds 5 -o outro.mp4')
     else:
-        print("avatar:  (the channel page didn't expose a downloadable avatar)")
+        print("avatar:   (couldn't fetch a public avatar for that profile)")
+
+
+def _parse_color(s: str):
+    s = (s or "").lstrip("#").strip()
+    named = {"red": "e6283c", "blue": "2b7cff", "green": "1fbf5a", "yellow": "ffcf33",
+             "orange": "ff7a1a", "purple": "9b4dff", "pink": "ff4d94", "cyan": "28c8d2",
+             "white": "f2f2f2"}
+    s = named.get(s.lower(), s)
+    try:
+        return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
+    except Exception:
+        return (230, 40, 60)
+
+
+def cmd_thumbnail(a):
+    info = probe(a.video)
+    at = a.at if a.at is not None else info["duration"] / 2
+    tmp = Path(tempfile.mkdtemp(prefix="afc_thumb_"))
+    try:
+        frame = str(tmp / "frame.png")
+        grab_frame(a.video, at, frame)
+        out = a.out or default_out(a.video, "_thumb.png")
+        make_thumbnail(out, frame, a.text, sub=a.sub or "", logo=a.logo, accent=_parse_color(a.accent))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"thumbnail (1280x720, frame @ {fmt_tc(at)}) -> {out}")
+
+
+def cmd_inspect(a):
+    """WATCH-FIRST bundle: spec + contact sheet + scene count + a review checklist."""
+    info = probe(a.video)
+    print("=== SPEC ===")
+    print(f"{Path(info['path']).name}  {fmt_tc(info['duration'])}  "
+          f"{info['width']}x{info['height']}@{info['fps']}fps  audio={'yes' if info['has_audio'] else 'no'}")
+    out = a.out or default_out(a.video, "_contact.png")
+    dur = info["duration"]
+    interval = dur / max(1, a.count)
+    tmp = Path(tempfile.mkdtemp(prefix="afc_inspect_"))
+    try:
+        cap = max(0.0, dur - 0.05)
+        for i in range(a.count):
+            grab_frame(a.video, min(i * interval, cap), tmp / f"f_{i:04d}.png", 320)
+        build_contact_sheet(sorted(tmp.glob("f_*.png")), out, cols=6, start=0, interval=interval)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"=== CONTACT SHEET ===\n{out}   <- Read this image; actually LOOK at the video")
+    if FFMPEG:
+        proc = run([FFMPEG, "-hide_banner", "-i", str(a.video),
+                    "-filter:v", "scale=480:-2,select='gt(scene,0.3)',showinfo",
+                    "-an", "-f", "null", "-"], check=False)
+        n = len(set(re.findall(r"pts_time:([0-9.]+)", proc.stderr or "")))
+        print(f"=== SCENES === ~{n} scene changes")
+    print("""
+=== WATCH-FIRST CHECKLIST (do this BEFORE asking how to edit) ===
+1. READ the contact sheet above — really look at every tile.
+2. FLAG anything to remove: passwords / login screens, real names, emails, phone numbers,
+   home address, OBS or streamer dashboards, other people, private browser tabs, DMs.
+3. NOTE obvious fixes: dead air / long pauses, menus or loading at the start, weak opening.
+4. If there is speech, run `transcribe` to read it (and catch spoken 'edit this out').
+THEN tell the user what you SAW and let them choose what to do (remove the sensitive stuff?
+add captions? cut the boring parts? intro/outro? music?) — don't edit until they pick.""")
 
 
 def cmd_transcribe(a):
@@ -585,10 +648,26 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-o", "--out")
     sp.set_defaults(func=cmd_music)
 
-    sp = sub.add_parser("channel", help="grab a PUBLIC YouTube channel's avatar + name (no API key)")
-    sp.add_argument("target", help="channel URL or @handle")
+    sp = sub.add_parser("profile", aliases=["channel"],
+                        help="grab a PUBLIC avatar + name (YouTube/Steam/Roblox/any og:image) — no API key")
+    sp.add_argument("target", help="profile URL, @handle, or username")
+    sp.add_argument("--platform", default="auto",
+                    choices=["auto", "youtube", "steam", "roblox", "generic"])
     sp.add_argument("-o", "--out", help="output dir for the avatar (default: channel_assets)")
-    sp.set_defaults(func=cmd_channel)
+    sp.set_defaults(func=cmd_profile)
+
+    sp = sub.add_parser("thumbnail", help="make a 1280x720 YouTube thumbnail (frame + big text + avatar)")
+    sp.add_argument("video"); sp.add_argument("--text", required=True)
+    sp.add_argument("--sub"); sp.add_argument("--at", type=float, help="frame time (default: middle)")
+    sp.add_argument("--logo", help="avatar/logo image (e.g. from `profile`)")
+    sp.add_argument("--accent", default="red", help="accent color: name or hex, e.g. e6283c")
+    sp.add_argument("-o", "--out")
+    sp.set_defaults(func=cmd_thumbnail)
+
+    sp = sub.add_parser("inspect", help="WATCH-FIRST: spec + contact sheet + scenes + review checklist")
+    sp.add_argument("video"); sp.add_argument("--count", type=int, default=30)
+    sp.add_argument("-o", "--out", help="contact sheet path")
+    sp.set_defaults(func=cmd_inspect)
 
     return p
 

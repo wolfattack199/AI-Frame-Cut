@@ -18,10 +18,11 @@ It solves three problems an AI has with video:
    titles (optionally with your **channel avatar + a Subscribe/Like** pill), **background
    music** with auto-ducking, instant keyframe trims, highlight cuts, concat, speed, resize,
    gif, and voice/audio effects. Optional **NVIDIA `--gpu`** encoding.
-4. **Working with you.** It's built to **interview you first** (what's it for, intro/outro,
-   music, CTAs), then edit step-by-step and hand you a fast **`preview`** after each step so
-   you watch the edit take shape. It can even grab a **public YouTube channel's avatar +
-   name** (no API key) to brand your intro/outro.
+4. **Working with you.** It **watches the video first** (`inspect`), flags anything private to
+   remove (passwords, real names, an OBS dashboard on screen…), then **asks how you want it
+   edited** — and works step-by-step, handing you a fast **`preview`** after each step so you
+   watch it take shape. It can grab a **public YouTube / Steam / Roblox** avatar + name (no API
+   key) to brand your intro/outro, and build a **YouTube thumbnail**.
 
 So you can say *"edit this gameplay for YouTube — clean intro with my channel logo, some
 music, cut the boring parts, and a Subscribe outro"* — and the agent asks what you're
@@ -64,8 +65,8 @@ See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 
 ## Commands
 
-`probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `grade` · `title` ·
-`trim` · `cut` · `concat` · `voice` · `music` · `preview` · `channel` · `speed` · `resize` · `gif` · `audio` · `doctor`
+`inspect` · `probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `grade` · `title` · `thumbnail` ·
+`trim` · `cut` · `concat` · `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` · `gif` · `audio` · `doctor`
 
 - **Grade looks:** `cinematic`, `noir`, `warm`, `cold`, `vhs`, `clean`
 - **Title styles:** `horror`, `clean`, `glitch`, `warm`
