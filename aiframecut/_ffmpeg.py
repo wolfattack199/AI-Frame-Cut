@@ -12,7 +12,7 @@ from pathlib import Path
 def _candidate_dirs() -> list[Path]:
     home = Path.home()
     return [
-        home / ".local" / "bin",          # where the frameforge installer puts a static build
+        home / ".local" / "bin",          # where the aiframecut installer puts a static build
         home / "scoop" / "shims",
         Path("C:/ffmpeg/bin"),
         Path("/opt/homebrew/bin"),
@@ -39,8 +39,8 @@ FFPROBE = find_exe("ffprobe")
 def _require(exe: str | None, name: str) -> str:
     if not exe:
         sys.exit(
-            f"[frameforge] '{name}' was not found. Install ffmpeg and make sure it is on "
-            f"your PATH (or in ~/.local/bin). Run 'frameforge doctor' for details."
+            f"[aiframecut] '{name}' was not found. Install ffmpeg and make sure it is on "
+            f"your PATH (or in ~/.local/bin). Run 'aiframecut doctor' for details."
         )
     return exe
 
@@ -51,7 +51,7 @@ def run(args: list, check: bool = True) -> subprocess.CompletedProcess:
     proc = subprocess.run(args, capture_output=True, text=True)
     if check and proc.returncode != 0:
         tail = "\n".join((proc.stderr or "").splitlines()[-15:])
-        sys.exit(f"[frameforge] command failed (exit {proc.returncode}):\n"
+        sys.exit(f"[aiframecut] command failed (exit {proc.returncode}):\n"
                  f"  {' '.join(args[:8])} ...\n{tail}")
     return proc
 
@@ -78,7 +78,7 @@ def _fps_of(stream: dict) -> float:
 def probe(path) -> dict:
     """Return a compact dict of the key facts about a media file."""
     if not Path(path).exists():
-        sys.exit(f"[frameforge] file not found: {path}")
+        sys.exit(f"[aiframecut] file not found: {path}")
     data = ffprobe_json(path)
     streams = data.get("streams", [])
     v = next((s for s in streams if s.get("codec_type") == "video"), {})

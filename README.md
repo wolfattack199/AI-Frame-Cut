@@ -1,63 +1,69 @@
-# frameforge
+# AI Frame Cut
 
-**Give Claude eyes for video, and fast hands to edit it.**
+**Give Claude & ChatGPT eyes, ears, and fast hands for video.**
 
-`frameforge` is a tiny, local, no-API-key video toolkit designed for AI coding
-agents (Claude Code, and anything that can run a shell). It solves two problems an
-agent has with video:
+AI Frame Cut is a small, **local, no-API-key** video toolkit designed for AI agents
+(Claude Code, ChatGPT/Codex, and anything that can run a terminal). Point an agent at
+this repo, tell it *"use this,"* and it can edit whole videos on your device.
 
-1. **Seeing it.** LLMs can't watch an MP4. `frameforge contact` turns a whole video
-   into a single labeled contact-sheet image the agent can look at in one glance —
-   or `frameforge frames` dumps frames at *any* frame rate (10 / 15 / 30 fps, or N
-   evenly spaced).
-2. **Editing it, fast.** One-line commands for the things you actually want: a
-   cinematic color grade, animated intro/outro title cards, instant keyframe trims,
-   highlight cuts, concatenation, speed changes, resize, and gif export — powered by
-   ffmpeg, no cloud, no transcription, no waiting.
+It solves three problems an AI has with video:
 
-It's built to be **added as a skill**: drop it in your agent's skills folder, and you
-can just say *"make this gameplay clip cinematic and give it an intro"* — the agent
-looks at it and does it, even for 8-minute videos.
+1. **Seeing it.** LLMs can't watch an MP4. `contact` turns a whole video into one
+   labeled contact-sheet image the agent reads in a glance; `scenes` finds cut points;
+   `frames` dumps frames at *any* rate (10/15/30 fps).
+2. **Hearing it.** `transcribe` runs **Whisper on your own device** (no API key) →
+   `.srt/.txt/.json` transcripts, and flags spoken **"edit this out"** moments so the
+   agent knows where to cut.
+3. **Editing it, fast.** One-line commands: cinematic color grade, animated intro/outro
+   titles, instant keyframe trims, highlight cuts, concat, speed, resize, gif, and
+   voice/audio effects. Optional **NVIDIA `--gpu`** encoding.
+
+So you can say *"make this gameplay clip cinematic, give it an intro, and cut the boring
+parts I flagged"* — and the agent looks, listens, and does it, even on 8-minute videos.
+
+> **Honest speed note:** re-encoding a long/4K video takes *minutes, not seconds* — that's
+> the CPU compressing every frame. What's instant: seeing it, and keyframe copy-cuts.
+> Downscaling to 1080p, re-encoding only what changes, and `--gpu` are the real speedups.
 
 ## Requirements
 
-- **ffmpeg** and **ffprobe** on your PATH (or in `~/.local/bin`)
-- **Python 3.9+** with [uv](https://docs.astral.sh/uv/) (or pip)
+- **ffmpeg** + **ffprobe** on PATH (or in `~/.local/bin`) — see [`install.md`](install.md)
+- **Python** with [uv](https://docs.astral.sh/uv/) — the project pins 3.12 (for the Whisper
+  wheels); uv fetches it automatically. `faster-whisper` and `pillow` install on `uv sync`.
 
 ## Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/frameforge ~/.claude/skills/frameforge
-cd ~/.claude/skills/frameforge
-uv sync                       # or: pip install -e .
-frameforge doctor             # confirm ffmpeg is found
+git clone https://github.com/YOUR_USERNAME/AI-Frame-Cut ~/.claude/skills/ai-frame-cut
+cd ~/.claude/skills/ai-frame-cut
+uv sync
+aiframecut doctor        # confirms ffmpeg, Whisper, and GPU availability
 ```
 
-That places it in Claude Code's skills directory. For other agents, put it in their
-skills folder (`~/.codex/skills/`, etc.) or point their config at `SKILL.md`.
-
-Don't have ffmpeg? See [`install.md`](install.md) — it covers a no-admin static build
-on Windows plus macOS/Linux.
+For other agents, put it in their skills folder (`~/.codex/skills/`, …) or point their
+config at `SKILL.md`. Once published, agents can also add it with the `skills` CLI:
+`npx skills add YOUR_USERNAME/AI-Frame-Cut`.
 
 ## Quick start
 
 ```bash
-frameforge probe   clip.mp4
-frameforge contact clip.mp4                         # -> clip_contact.png (look at it)
-frameforge grade   clip.mp4 --look cinematic --height 1080 --letterbox 0.07
-frameforge title   --text "LIGHTS OUT" --sub "APRIL 10" --style horror -o intro.mp4
-frameforge concat  final.mp4 intro.mp4 clip_cinematic.mp4
+aiframecut contact    clip.mp4                       # -> clip_contact.png (look at it)
+aiframecut transcribe clip.mp4                       # -> clip.srt/.txt/.json + edit-marks
+aiframecut grade      clip.mp4 --look cinematic --height 1080 --letterbox 0.07
+aiframecut title      --text "LIGHTS OUT" --sub "APRIL 10" --style horror -o intro.mp4
+aiframecut concat     final.mp4 intro.mp4 clip_cinematic.mp4
 ```
 
 See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 
 ## Commands
 
-`probe` · `contact` · `frames` · `thumb` · `grade` · `title` · `trim` · `cut` ·
-`concat` · `speed` · `resize` · `gif` · `audio` · `doctor`
+`probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `grade` · `title` ·
+`trim` · `cut` · `concat` · `voice` · `speed` · `resize` · `gif` · `audio` · `doctor`
 
-Grade looks: `cinematic`, `noir`, `warm`, `cold`, `vhs`, `clean`.
-Title styles: `horror`, `clean`, `glitch`, `warm`.
+- **Grade looks:** `cinematic`, `noir`, `warm`, `cold`, `vhs`, `clean`
+- **Title styles:** `horror`, `clean`, `glitch`, `warm`
+- **Voice effects:** `deep`, `deeper`, `high`, `chipmunk`, `radio`, `robot`, `denoise`, `clean`
 
 ## License
 

@@ -1,9 +1,10 @@
-"""frameforge command-line interface."""
+"""aiframecut command-line interface."""
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from pathlib import Path
 from . import __version__
 from ._ffmpeg import (FFMPEG, FFPROBE, ffmpeg, probe, fmt_tc, default_out, run, grab_frame)
 from .titles import build_contact_sheet, make_title_card
+from .transcribe import transcribe_file
 
 # One-word color grades. Each value is an ffmpeg filter chain (no scaling/letterbox;
 # those are added by the grade command from flags).
@@ -25,8 +27,30 @@ LOOKS = {
     "clean":     "eq=contrast=1.04:saturation=1.02",
 }
 
-VENC = lambda a: ["-c:v", "libx264", "-preset", a.preset, "-crf", str(a.crf), "-pix_fmt", "yuv420p"]
+def VENC(a):
+    """Video-encode flags. --gpu swaps in NVIDIA NVENC for a big speedup."""
+    if getattr(a, "gpu", False):
+        return ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", str(a.crf), "-pix_fmt", "yuv420p"]
+    return ["-c:v", "libx264", "-preset", a.preset, "-crf", str(a.crf), "-pix_fmt", "yuv420p"]
+
+
 AENC = ["-c:a", "aac", "-b:a", "160k"]
+
+# Voice-changer pitch factors (<1 = deeper, >1 = higher).
+VOICES = {"deep": 0.82, "deeper": 0.72, "high": 1.25, "chipmunk": 1.5}
+
+
+def _pitch_af(video, factor: float) -> str:
+    sr = int(probe(video)["sample_rate"] or 48000)
+    # resample to shift pitch, then restore the original duration/tempo
+    steps = [f"asetrate={int(sr * factor)}", f"aresample={sr}"]
+    t = 1.0 / factor
+    while t > 2.0:
+        steps.append("atempo=2.0"); t /= 2.0
+    while t < 0.5:
+        steps.append("atempo=0.5"); t /= 0.5
+    steps.append(f"atempo={t:.4f}")
+    return ",".join(steps)
 
 
 def _letterbox_filters(frac: float) -> list[str]:
@@ -40,7 +64,7 @@ def _print(d):
 
 # ------------------------------------------------------------- commands ----
 def cmd_doctor(a):
-    print(f"frameforge {__version__}")
+    print(f"aiframecut {__version__}")
     print(f"python     {sys.version.split()[0]}")
     print(f"ffmpeg     {FFMPEG or 'NOT FOUND'}")
     print(f"ffprobe    {FFPROBE or 'NOT FOUND'}")
@@ -49,11 +73,21 @@ def cmd_doctor(a):
         print(f"pillow     {PIL.__version__}")
     except Exception:
         print("pillow     NOT INSTALLED")
+    try:
+        import faster_whisper
+        print(f"whisper    faster-whisper {getattr(faster_whisper, '__version__', 'installed')}")
+    except Exception:
+        print("whisper    NOT INSTALLED (transcription off — run 'uv sync')")
+    gpu = "none (CPU encoding). Add --gpu only if an NVIDIA encoder shows here."
+    if FFMPEG and "h264_nvenc" in run([FFMPEG, "-hide_banner", "-encoders"], check=False).stdout:
+        gpu = "h264_nvenc available — pass --gpu for fast encoding"
+    print(f"gpu enc    {gpu}")
     if FFMPEG:
         v = run([FFMPEG, "-version"]).stdout.splitlines()[0]
         print(f"           {v}")
     print("looks     ", ", ".join(LOOKS))
-    print("styles    ", "horror, clean, glitch, warm")
+    print("title     ", "horror, clean, glitch, warm")
+    print("voices    ", ", ".join(list(VOICES) + ["radio", "robot", "denoise", "clean"]))
 
 
 def cmd_probe(a):
@@ -129,7 +163,7 @@ def cmd_thumb(a):
 def cmd_grade(a):
     look = LOOKS.get(a.look)
     if look is None:
-        sys.exit(f"[frameforge] unknown look '{a.look}'. options: {', '.join(LOOKS)}")
+        sys.exit(f"[aiframecut] unknown look '{a.look}'. options: {', '.join(LOOKS)}")
     chain = []
     if a.height:
         chain.append(f"scale=-2:{a.height}:flags=lanczos")
@@ -172,11 +206,11 @@ def _parse_segments(spec: str) -> list[tuple[float, float]]:
         if not part:
             continue
         if "-" not in part:
-            sys.exit(f"[frameforge] bad segment '{part}', expected START-END (e.g. 12-30)")
+            sys.exit(f"[aiframecut] bad segment '{part}', expected START-END (e.g. 12-30)")
         a_s, b_s = part.split("-", 1)
         segs.append((float(a_s), float(b_s)))
     if not segs:
-        sys.exit("[frameforge] no segments given")
+        sys.exit("[aiframecut] no segments given")
     return segs
 
 
@@ -208,7 +242,7 @@ def cmd_concat(a):
     clips = a.clips
     for c in clips:
         if not Path(c).exists():
-            sys.exit(f"[frameforge] clip not found: {c}")
+            sys.exit(f"[aiframecut] clip not found: {c}")
     infos = [probe(c) for c in clips]
     key = lambda i: (i["width"], i["height"], i["fps"], i["vcodec"], i["acodec"], i["has_audio"])
     same = all(key(i) == key(infos[0]) for i in infos)
@@ -304,16 +338,76 @@ def cmd_title(a):
     print(f"title card '{a.text}' ({a.seconds:g}s, style {a.style}) -> {a.out}")
 
 
+def cmd_transcribe(a):
+    triggers = None
+    if a.find:
+        triggers = [t.strip().lower() for t in a.find.split(",") if t.strip()]
+    print(f"transcribing with local Whisper '{a.model}' (no API key; first run downloads the model)...")
+    res = transcribe_file(a.video, model_size=a.model, language=a.lang, out_base=a.out,
+                          triggers=triggers, device=a.device,
+                          compute_type=("float16" if a.device == "cuda" else "int8"))
+    print(f"language: {res['language']} ({res['language_probability']}), "
+          f"{res['duration']}s, {len(res['segments'])} segments")
+    print(f"wrote {res['_out_base']}.srt / .txt / .json")
+    marks = res["edit_marks"]
+    if marks:
+        print(f"\n{len(marks)} spoken EDIT mark(s):")
+        for m in marks:
+            print(f"  @ {fmt_tc(m['at'])}  \"{m['said']}\"  -> suggest cutting {m['suggested_cut']}")
+    else:
+        print("no spoken edit-words found.")
+
+
+def cmd_voice(a):
+    out = a.out or default_out(a.video, f"_{a.effect}.mp4")
+    if a.effect in VOICES:
+        af = _pitch_af(a.video, VOICES[a.effect])
+    elif a.effect == "radio":
+        af = "highpass=f=300,lowpass=f=3400,acompressor,volume=1.6"
+    elif a.effect == "robot":
+        sr = int(probe(a.video)["sample_rate"] or 48000)
+        af = f"asetrate={int(sr * 0.9)},aresample={sr},atempo={1 / 0.9:.4f},aphaser=speed=2,flanger"
+    elif a.effect == "denoise":
+        af = "afftdn=nf=-25"
+    elif a.effect == "clean":
+        af = "afftdn=nf=-20,acompressor=threshold=-18dB:ratio=3,loudnorm"
+    else:
+        sys.exit(f"[aiframecut] unknown voice effect '{a.effect}'")
+    if a.volume != 1.0:
+        af += f",volume={a.volume}"
+    # video stream is copied (instant) — only the audio is re-encoded
+    ffmpeg(["-i", str(a.video), "-af", af, "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", out])
+    print(f"voice '{a.effect}' applied (video copied, audio only) -> {out}")
+
+
+def cmd_scenes(a):
+    if not FFMPEG:
+        sys.exit("[aiframecut] ffmpeg not found")
+    # decode a downscaled copy for speed; showinfo prints pts_time for each scene-cut frame
+    proc = run([FFMPEG, "-hide_banner", "-i", str(a.video),
+                "-filter:v", f"scale=480:-2,select='gt(scene,{a.threshold})',showinfo",
+                "-an", "-f", "null", "-"], check=False)
+    times = sorted(set(float(t) for t in re.findall(r"pts_time:([0-9.]+)", proc.stderr or "")))
+    print(f"{len(times)} scene change(s) at threshold {a.threshold}:")
+    for t in times:
+        print(f"  {fmt_tc(t)}  ({t:.2f}s)")
+    if not times:
+        print("  (none found — try a lower --threshold, e.g. 0.2)")
+
+
 # --------------------------------------------------------------- parser ----
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="frameforge",
-                                description="Give Claude eyes for video, and fast hands to edit it.")
-    p.add_argument("--version", action="version", version=f"frameforge {__version__}")
+    p = argparse.ArgumentParser(
+        prog="aiframecut",
+        description="AI Frame Cut — give Claude & ChatGPT eyes, ears, and fast hands for video.")
+    p.add_argument("--version", action="version", version=f"aiframecut {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def enc(sp):  # shared encode flags
         sp.add_argument("--crf", type=int, default=20)
         sp.add_argument("--preset", default="medium")
+        sp.add_argument("--gpu", action="store_true",
+                        help="use NVIDIA NVENC hardware encoding (much faster; needs an NVIDIA GPU)")
 
     sp = sub.add_parser("doctor", help="check ffmpeg/ffprobe/pillow and list looks")
     sp.set_defaults(func=cmd_doctor)
@@ -400,6 +494,25 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--flicker", default="auto", choices=["auto", "on", "off"])
     sp.add_argument("--silent", action="store_true", help="no rumble bed"); enc(sp)
     sp.set_defaults(func=cmd_title)
+
+    sp = sub.add_parser("transcribe", help="on-device speech-to-text + spoken edit-word detection")
+    sp.add_argument("video"); sp.add_argument("-o", "--out", help="output basename (.srt/.txt/.json)")
+    sp.add_argument("--model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"])
+    sp.add_argument("--lang", help="language code (e.g. en); auto-detected if omitted")
+    sp.add_argument("--find", help="comma-separated trigger phrases (default: the edit/cut-this-out set)")
+    sp.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    sp.set_defaults(func=cmd_transcribe)
+
+    sp = sub.add_parser("voice", help="voice-changer / audio effects (video copied, audio only)")
+    sp.add_argument("video")
+    sp.add_argument("--effect", required=True, choices=list(VOICES) + ["radio", "robot", "denoise", "clean"])
+    sp.add_argument("--volume", type=float, default=1.0)
+    sp.add_argument("-o", "--out")
+    sp.set_defaults(func=cmd_voice)
+
+    sp = sub.add_parser("scenes", help="detect scene-change cut points (smart alternative to dumping frames)")
+    sp.add_argument("video"); sp.add_argument("--threshold", type=float, default=0.3)
+    sp.set_defaults(func=cmd_scenes)
 
     return p
 
