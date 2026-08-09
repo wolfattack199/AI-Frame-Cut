@@ -29,11 +29,34 @@ LOOKS = {
     "clean":     "eq=contrast=1.04:saturation=1.02",
 }
 
+# --quality presets: (crf/cq, preset). Lower crf = higher quality/larger.
+_Q_X264 = {"max": (16, "slow"), "high": (18, "medium"), "balanced": (20, "medium"), "fast": (23, "veryfast")}
+_Q_NVENC = {"max": (18, "p7"), "high": (20, "p6"), "balanced": (23, "p5"), "fast": (26, "p4")}
+
+
 def VENC(a):
-    """Video-encode flags. --gpu swaps in NVIDIA NVENC for a big speedup."""
+    """Video-encode flags. `--quality` sets crf/preset; `--gpu` uses NVENC; `--keyint`
+    sets a denser keyframe interval (seconds) for precise cuts + smoother seeking."""
+    q = getattr(a, "quality", None)
     if getattr(a, "gpu", False):
-        return ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", str(a.crf), "-pix_fmt", "yuv420p"]
-    return ["-c:v", "libx264", "-preset", a.preset, "-crf", str(a.crf), "-pix_fmt", "yuv420p"]
+        cq, preset = _Q_NVENC.get(q, (a.crf, "p5"))
+        v = ["-c:v", "h264_nvenc", "-preset", preset, "-rc", "vbr", "-cq", str(cq), "-pix_fmt", "yuv420p"]
+    else:
+        crf, preset = _Q_X264.get(q, (a.crf, a.preset))
+        v = ["-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p"]
+    ki = getattr(a, "keyint", None)
+    if ki and getattr(a, "video", None):
+        try:
+            fps = probe(a.video)["fps"] or 30
+            v += ["-g", str(max(1, int(round(fps * ki))))]
+        except Exception:
+            pass
+    return v
+
+
+def INDEC(a):
+    """Input decode flags — `--gpu` decodes on the GPU too (full NVDEC->NVENC pipeline)."""
+    return ["-hwaccel", "cuda"] if getattr(a, "gpu", False) else []
 
 
 AENC = ["-c:a", "aac", "-b:a", "160k"]
@@ -173,7 +196,7 @@ def cmd_grade(a):
     if a.letterbox and a.letterbox > 0:
         chain += _letterbox_filters(a.letterbox)
     out = a.out or default_out(a.video, f"_{a.look}.mp4")
-    args = ["-i", str(a.video), "-vf", ",".join(chain), *VENC(a)]
+    args = [*INDEC(a), "-i", str(a.video), "-vf", ",".join(chain), *VENC(a)]
     if a.fps:
         args += ["-r", str(a.fps)]
     args += [*AENC, out]
@@ -235,7 +258,7 @@ def cmd_cut(a):
         parts.append("".join(labels) + f"concat=n={n}:v=1:a=0[v]")
         maps = ["-map", "[v]"]
     out = a.out or default_out(a.video, "_cut.mp4")
-    ffmpeg(["-i", str(a.video), "-filter_complex", ";".join(parts), *maps, *VENC(a), out])
+    ffmpeg([*INDEC(a), "-i", str(a.video), "-filter_complex", ";".join(parts), *maps, *VENC(a), out])
     kept = sum(e - s for s, e in segs)
     print(f"kept {n} segment(s) ({kept:.1f}s total) -> {out}")
 
@@ -302,7 +325,7 @@ def cmd_speed(a):
     else:
         fc = f"[0:v]setpts=PTS/{a.factor}[v]"
         maps = ["-map", "[v]"]
-    ffmpeg(["-i", str(a.video), "-filter_complex", fc, *maps, *VENC(a), out])
+    ffmpeg([*INDEC(a), "-i", str(a.video), "-filter_complex", fc, *maps, *VENC(a), out])
     print(f"speed x{a.factor} -> {out}")
 
 
@@ -312,7 +335,7 @@ def cmd_resize(a):
         vf = f"scale=-2:{a.height}:flags=lanczos"
     else:
         vf = f"scale={a.width}:-2:flags=lanczos"
-    ffmpeg(["-i", str(a.video), "-vf", vf, *VENC(a), "-c:a", "copy", out])
+    ffmpeg([*INDEC(a), "-i", str(a.video), "-vf", vf, *VENC(a), "-c:a", "copy", out])
     print(f"resized -> {out}")
 
 
@@ -529,7 +552,7 @@ def cmd_short(a):
               "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[f];"
               "[b][f]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
     out = a.out or default_out(a.video, "_short.mp4")
-    ffmpeg(["-ss", str(start), "-i", str(a.video), "-t", str(dur),
+    ffmpeg([*INDEC(a), "-ss", str(start), "-i", str(a.video), "-t", str(dur),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", *VENC(a), *AENC, out])
     print(f"short (1080x1920, {a.mode}, {dur:.1f}s) -> {out}")
     if a.title or a.tags or a.desc:
@@ -568,6 +591,16 @@ def cmd_split(a):
           "then `cut` / `concat` the keepers.")
 
 
+def cmd_smooth(a):
+    """Motion-interpolate to a higher framerate for buttery-smooth motion (slow, real work)."""
+    out = a.out or default_out(a.video, f"_{int(a.fps)}fps.mp4")
+    vf = f"minterpolate=fps={a.fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"
+    if a.height:
+        vf += f",scale=-2:{a.height}:flags=lanczos"
+    ffmpeg([*INDEC(a), "-i", str(a.video), "-vf", vf, *VENC(a), "-c:a", "copy", out])
+    print(f"smoothed to {a.fps}fps (motion-interpolated) -> {out}")
+
+
 # --------------------------------------------------------------- parser ----
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -579,8 +612,12 @@ def build_parser() -> argparse.ArgumentParser:
     def enc(sp):  # shared encode flags
         sp.add_argument("--crf", type=int, default=20)
         sp.add_argument("--preset", default="medium")
+        sp.add_argument("--quality", choices=["max", "high", "balanced", "fast"],
+                        help="quality preset (max = near-lossless, slow). Overrides --crf/--preset.")
+        sp.add_argument("--keyint", type=float,
+                        help="keyframe interval in seconds (denser = more precise cuts + seeking)")
         sp.add_argument("--gpu", action="store_true",
-                        help="use NVIDIA NVENC hardware encoding (much faster; needs an NVIDIA GPU)")
+                        help="NVIDIA GPU decode + NVENC encode (full hardware pipeline)")
 
     sp = sub.add_parser("doctor", help="check ffmpeg/ffprobe/pillow and list looks")
     sp.set_defaults(func=cmd_doctor)
@@ -738,6 +775,12 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--parts", type=int, help="split into N equal parts")
     sp.add_argument("-o", "--out", help="output dir (default: <video>_chunks)")
     sp.set_defaults(func=cmd_split)
+
+    sp = sub.add_parser("smooth", help="motion-interpolate to a higher fps for buttery motion (slow)")
+    sp.add_argument("video"); sp.add_argument("--fps", type=int, default=60)
+    sp.add_argument("--height", type=int, help="also rescale, e.g. 1080")
+    sp.add_argument("-o", "--out"); enc(sp)
+    sp.set_defaults(func=cmd_smooth)
 
     return p
 

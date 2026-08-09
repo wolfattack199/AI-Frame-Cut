@@ -11,4 +11,4 @@ No cloud services, no API keys (the only network use is the public YouTube chann
 and the one-time Whisper model download). Everything runs on the user's own device.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

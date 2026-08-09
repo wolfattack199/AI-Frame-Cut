@@ -66,7 +66,9 @@ See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 ## Commands
 
 `inspect` · `probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `grade` · `title` · `thumbnail` ·
-`trim` · `cut` · `concat` · `short` · `split` · `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` · `gif` · `audio` · `doctor`
+`trim` · `cut` · `concat` · `short` · `split` · `smooth` · `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` · `gif` · `audio` · `doctor`
+
+Encode commands support **`--quality max`** (native-res near-lossless), **`--keyint`** (dense keyframes), and **`--gpu`** (full NVIDIA decode+encode).
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 

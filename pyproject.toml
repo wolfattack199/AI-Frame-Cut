@@ -1,6 +1,6 @@
 [project]
 name = "aiframecut"
-version = "0.5.0"
+version = "0.6.0"
 description = "AI Frame Cut — give Claude & ChatGPT eyes, ears, and fast hands for video. Local, no API keys: contact sheets, on-device transcription, edit-word detection, cinematic grading, branded animated titles (channel avatar + Subscribe/Like), background music with ducking, cutting, audio/voice effects, and quick previews."
 readme = "README.md"
 requires-python = ">=3.9,<3.13"

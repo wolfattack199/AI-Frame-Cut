@@ -77,6 +77,7 @@ whether NVIDIA `--gpu` encoding is available.
 | `speed VIDEO --factor 2.0 [--mute]` | speed up / slow down, pitch-preserved |
 | `short VIDEO [--start --end] [--mode pad\|crop] [--max 60] [--title --tags --desc]` | make a 9:16 **YouTube Short/Reel** (`pad` = blurred bg, whole frame kept; `crop` = fill) + a metadata sidecar |
 | `split VIDEO [--minutes 5 \| --parts N]` | slice a **long video** into chunks + a `chunks.txt` manifest, to process piece by piece |
+| `smooth VIDEO --fps 120 [--height]` | **frame interpolation** — motion-interpolate to a higher fps for buttery motion (slow) |
 | `resize VIDEO --height 1080` / `gif VIDEO --start --end` / `audio VIDEO` | rescale / gif / extract mp3 |
 | `doctor` | check ffmpeg, Whisper, GPU, and list looks/styles/voices |
 
@@ -84,7 +85,9 @@ whether NVIDIA `--gpu` encoding is available.
 **Title styles**: `horror`, `clean`, `glitch`, `warm`.
 **Voice effects**: `deep`, `deeper`, `high`, `chipmunk`, `radio`, `robot`, `denoise`, `clean`.
 
-Encode commands take `-o/--out`, `--crf`/`--preset`, and `--gpu` (NVIDIA NVENC, if `doctor` shows it).
+Encode commands take `-o/--out`, quality controls **`--quality max|high|balanced|fast`** (or manual
+`--crf`/`--preset`), **`--keyint <sec>`** for denser keyframes (precise cuts + smoother seeking), and
+**`--gpu`** (full NVIDIA decode+encode, if `doctor` shows it).
 
 ## Recipes
 
@@ -129,6 +132,10 @@ aiframecut preview final.mp4 -o final_preview.mp4                    # then SHOW
 - **Speed is physics.** Re-encoding a long/4K video takes minutes, not seconds. What's instant:
   seeing it, transcribing (minutes), and keyframe copy-cuts. Downscale, only re-encode what
   changes, and use `--gpu` to go faster. Don't promise "seconds" for a full grade.
+- **Quality vs. smoothness.** The output is ALREADY full framerate — re-encoding processes every
+  frame, so it is not "choppy". If the user wants it to look better, that's **resolution + bitrate**:
+  keep native res (omit `--height`) + `--quality max`. Use `smooth` only to *raise* fps (30→60/120)
+  for extra motion. Keep re-encodes to one pass; each generation loses a little quality.
 - **Match params before concat.** `concat` stream-copies only when width/height/fps/codecs match;
   otherwise it re-encodes to the first clip's spec. Build title cards at the body's size/fps.
 - **Keyframe trims are approximate at the ends.** For a precise cut use `--reencode` or `cut`.

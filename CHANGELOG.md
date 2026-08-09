@@ -4,6 +4,20 @@ All notable changes to **AI Frame Cut**. Newest release on top.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/); this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.6.0] — 2026-08-08
+
+### Added
+- **`--quality max|high|balanced|fast`** on encode commands — a high-level quality knob
+  (max ≈ near-lossless, slow). Keep native resolution (omit `--height`) + `--quality max` for
+  the best-looking output.
+- **`--keyint <seconds>`** — denser keyframes for frame-precise cuts and smoother seeking.
+- **`smooth`** — motion-interpolate to a higher framerate (e.g. 30→60→120) for buttery motion.
+- **Full GPU pipeline** — `--gpu` now decodes on the GPU too (NVDEC → NVENC), ~3–4× faster.
+
+### Notes
+- Clarified that edited output is already full framerate — "choppiness" is a resolution/bitrate
+  or playback issue, not the edit itself.
+
 ## [0.5.0] — 2026-08-08
 
 ### Added
