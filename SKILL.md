@@ -64,6 +64,7 @@ whether NVIDIA `--gpu` encoding is available.
 | `frames VIDEO [--fps 10 \| --count 24] [--width] [--start --end]` | dump frames at **any** frame rate or N evenly spaced |
 | `thumb VIDEO --at 42 [--width]` | one frame at a timestamp |
 | `transcribe VIDEO [--model base] [--lang en] [--find "phrase,..."] [--device cpu\|cuda]` | on-device Whisper → `.srt/.txt/.json` + spoken **edit-word** marks |
+| `captions VIDEO [--srt FILE] [--style clean\|bold\|yellow\|box\|top] [--size] [--color] [--margin]` | **burn in captions** (auto-transcribes first if no `.srt`). Essential for talking videos and mute-scrolling viewers |
 | `grade VIDEO [--look cinematic] [--height 1080] [--letterbox 0.07] [--fps] [--gpu]` | one-word color grade |
 | `title --text "..." [--sub "..."] [--cta "SUBSCRIBE & LIKE"] [--logo avatar.png] [--seconds 6] [--style horror] [--size 1920x1080] [--letterbox 0.07] [--silent] -o OUT.mp4` | animated intro/outro card — add `--logo` for a circular channel avatar and `--cta` for a Subscribe/Like pill |
 | `trim VIDEO --start 25 [--end 60] [--reencode]` | cut one span. Default **keyframe-instant**; `--reencode` for frame-accuracy |
@@ -141,6 +142,11 @@ aiframecut preview final.mp4 -o final_preview.mp4                    # then SHOW
 - **Keyframe trims are approximate at the ends.** For a precise cut use `--reencode` or `cut`.
 - **Transcription needs speech.** Whisper's voice-activity filter returns 0 segments on pure
   game/ambient audio — that's correct, not a bug.
+- **If the footage is unusable, say so and rebuild.** Screen recordings sometimes capture only
+  OBS itself (or a launcher) — the audio is still the content. Drop the video track and build
+  visuals from scratch: a background, the user's avatar/PNGtuber art (OBS stores image-source
+  paths in `%APPDATA%/obs-studio/basic/scenes/*.json`), `captions`, and any screenshots they
+  supply timed to what they say. Tell the user before doing it.
 - **Verify before you present.** Read a `thumb`/`contact` of the final render.
 - **`profile`/`channel` is the only online feature.** It reads PUBLIC pages/APIs (YouTube og:image, the Steam profile page, the Roblox public API) — no login, no API key. Ask the user for their profile URL / @handle / username and only fetch what they give you.
 - **Music needs a track the user provides** (a file path). The tool mixes / ducks / fades it — it doesn't source or generate music itself.

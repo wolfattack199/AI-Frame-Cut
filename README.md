@@ -1,4 +1,4 @@
-# AI Frame Cut
+﻿# AI Frame Cut
 
 **Give Claude & ChatGPT eyes, ears, and fast hands for video.**
 
@@ -11,7 +11,7 @@ It solves three problems an AI has with video:
 1. **Seeing it.** LLMs can't watch an MP4. `contact` turns a whole video into one
    labeled contact-sheet image the agent reads in a glance; `scenes` finds cut points;
    `frames` dumps frames at *any* rate (10/15/30 fps).
-2. **Hearing it.** `transcribe` runs **Whisper on your own device** (no API key) →
+2. **Hearing it.** `transcribe` runs **Whisper on your own device** (no API key) â†’
    `.srt/.txt/.json` transcripts, and flags spoken **"edit this out"** moments so the
    agent knows where to cut.
 3. **Editing it, fast.** One-line commands: cinematic color grade, animated intro/outro
@@ -19,23 +19,23 @@ It solves three problems an AI has with video:
    music** with auto-ducking, instant keyframe trims, highlight cuts, concat, speed, resize,
    gif, and voice/audio effects. Optional **NVIDIA `--gpu`** encoding.
 4. **Working with you.** It **watches the video first** (`inspect`), flags anything private to
-   remove (passwords, real names, an OBS dashboard on screen…), then **asks how you want it
-   edited** — and works step-by-step, handing you a fast **`preview`** after each step so you
+   remove (passwords, real names, an OBS dashboard on screenâ€¦), then **asks how you want it
+   edited** â€” and works step-by-step, handing you a fast **`preview`** after each step so you
    watch it take shape. It can grab a **public YouTube / Steam / Roblox** avatar + name (no API
    key) to brand your intro/outro, and build a **YouTube thumbnail**.
 
-So you can say *"edit this gameplay for YouTube — clean intro with my channel logo, some
-music, cut the boring parts, and a Subscribe outro"* — and the agent asks what you're
+So you can say *"edit this gameplay for YouTube â€” clean intro with my channel logo, some
+music, cut the boring parts, and a Subscribe outro"* â€” and the agent asks what you're
 picturing, then looks, listens, and builds it, showing you previews along the way.
 
-> **Honest speed note:** re-encoding a long/4K video takes *minutes, not seconds* — that's
+> **Honest speed note:** re-encoding a long/4K video takes *minutes, not seconds* â€” that's
 > the CPU compressing every frame. What's instant: seeing it, and keyframe copy-cuts.
 > Downscaling to 1080p, re-encoding only what changes, and `--gpu` are the real speedups.
 
 ## Requirements
 
-- **ffmpeg** + **ffprobe** on PATH (or in `~/.local/bin`) — see [`install.md`](install.md)
-- **Python** with [uv](https://docs.astral.sh/uv/) — the project pins 3.12 (for the Whisper
+- **ffmpeg** + **ffprobe** on PATH (or in `~/.local/bin`) â€” see [`install.md`](install.md)
+- **Python** with [uv](https://docs.astral.sh/uv/) â€” the project pins 3.12 (for the Whisper
   wheels); uv fetches it automatically. `faster-whisper` and `pillow` install on `uv sync`.
 
 ## Install
@@ -47,7 +47,7 @@ uv sync
 aiframecut doctor        # confirms ffmpeg, Whisper, and GPU availability
 ```
 
-For other agents, put it in their skills folder (`~/.codex/skills/`, …) or point their
+For other agents, put it in their skills folder (`~/.codex/skills/`, â€¦) or point their
 config at `SKILL.md`. Once published, agents can also add it with the `skills` CLI:
 `npx skills add YOUR_USERNAME/AI-Frame-Cut`.
 
@@ -65,8 +65,8 @@ See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 
 ## Commands
 
-`inspect` · `probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `grade` · `title` · `thumbnail` ·
-`trim` · `cut` · `concat` · `short` · `split` · `smooth` · `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` · `gif` · `audio` · `doctor`
+`inspect` Â· `probe` Â· `contact` Â· `scenes` Â· `frames` Â· `thumb` Â· `transcribe` Â· `grade` Â· `title` Â· `thumbnail` Â·
+`trim` Â· `cut` Â· `concat` Â· `short` Â· `split` Â· `smooth` Â· `voice` Â· `music` Â· `preview` Â· `profile` (YouTube/Steam/Roblox) Â· `speed` Â· `resize` Â· `gif` Â· `audio` Â· `doctor`
 
 Encode commands support **`--quality max`** (native-res near-lossless), **`--keyint`** (dense keyframes), and **`--gpu`** (full NVIDIA decode+encode).
 
@@ -78,4 +78,4 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Built to be forked, renamed, and extended.
+MIT â€” see [LICENSE](LICENSE). Built to be forked, renamed, and extended.

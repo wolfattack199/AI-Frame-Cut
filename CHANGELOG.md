@@ -4,6 +4,18 @@ All notable changes to **AI Frame Cut**. Newest release on top.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/); this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.7.0] — 2026-08-22
+
+### Added
+- **`captions`** — burn captions into a video from an `.srt` (auto-transcribes with local
+  Whisper first if you don't have one). Presets: `clean`, `bold`, `yellow`, `box`, `top`,
+  plus `--size` / `--color` / `--margin`.
+
+### Fixed
+- Caption font sizes are now **true pixels**: the SRT is converted to ASS carrying the
+  video's real resolution, so text no longer renders ~3.75x too large on 1080p (libass
+  otherwise assumes a 288px-tall reference).
+
 ## [0.6.0] — 2026-08-08
 
 ### Added

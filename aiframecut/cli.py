@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from ._ffmpeg import (FFMPEG, FFPROBE, ffmpeg, probe, fmt_tc, default_out, run, grab_frame)
+from .captions import STYLES as CAPTION_STYLES, escape_path as _esc_sub, srt_to_ass
 from .titles import build_contact_sheet, make_title_card
 from .thumbnail import make_thumbnail
 from .transcribe import transcribe_file
@@ -591,6 +592,35 @@ def cmd_split(a):
           "then `cut` / `concat` the keepers.")
 
 
+def cmd_captions(a):
+    """Burn captions into the video from an .srt (auto-transcribes first if none given)."""
+    srt = a.srt
+    if not srt:
+        base = str(Path(default_out(a.video, "")).with_suffix(""))
+        cand = Path(base + ".srt")
+        if cand.exists() and not a.force:
+            srt = str(cand)
+            print(f"using existing transcript: {srt}")
+        else:
+            print(f"no .srt given — transcribing locally with Whisper '{a.model}' first...")
+            res = transcribe_file(a.video, model_size=a.model, language=a.lang)
+            srt = res["_out_base"] + ".srt"
+    if not Path(srt).exists():
+        sys.exit(f"[aiframecut] subtitle file not found: {srt}")
+    out = a.out or default_out(a.video, "_cap.mp4")
+    info = probe(a.video)
+    tmp = Path(tempfile.mkdtemp(prefix="afc_cap_"))
+    try:
+        # convert to ASS carrying the real frame size, so --size is in true pixels
+        ass = srt_to_ass(srt, tmp / "subs.ass", info["width"] or 1920, info["height"] or 1080,
+                         style=a.style, size=a.size, color=a.color, margin=a.margin)
+        ffmpeg([*INDEC(a), "-i", str(a.video), "-vf", f"ass='{_esc_sub(ass)}'",
+                *VENC(a), "-c:a", "copy", out])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"captions burned in (style '{a.style}') -> {out}")
+
+
 def cmd_smooth(a):
     """Motion-interpolate to a higher framerate for buttery-smooth motion (slow, real work)."""
     out = a.out or default_out(a.video, f"_{int(a.fps)}fps.mp4")
@@ -775,6 +805,17 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--parts", type=int, help="split into N equal parts")
     sp.add_argument("-o", "--out", help="output dir (default: <video>_chunks)")
     sp.set_defaults(func=cmd_split)
+
+    sp = sub.add_parser("captions", help="burn captions into the video from an .srt (auto-transcribes if needed)")
+    sp.add_argument("video"); sp.add_argument("--srt", help="subtitle file (default: alongside the video, else transcribe)")
+    sp.add_argument("--style", default="clean", choices=list(CAPTION_STYLES))
+    sp.add_argument("--size", type=int, help="font size override")
+    sp.add_argument("--color", help="text color hex, e.g. FFD400")
+    sp.add_argument("--margin", type=int, help="distance from the edge in px")
+    sp.add_argument("--model", default="base", help="Whisper model if transcribing")
+    sp.add_argument("--lang"); sp.add_argument("--force", action="store_true", help="re-transcribe even if an .srt exists")
+    sp.add_argument("-o", "--out"); enc(sp)
+    sp.set_defaults(func=cmd_captions)
 
     sp = sub.add_parser("smooth", help="motion-interpolate to a higher fps for buttery motion (slow)")
     sp.add_argument("video"); sp.add_argument("--fps", type=int, default=60)
