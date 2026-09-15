@@ -1,6 +1,6 @@
 ---
 name: ai-frame-cut
-description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, YouTube thumbnails, vertical Shorts, long-video splitting, and quick previews so the user can watch progress. It inspects the video first (contact sheet + review checklist) before asking how to edit, and can grab a PUBLIC YouTube / Steam / Roblox profile avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
+description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, YouTube thumbnails, vertical Shorts, long-video splitting, and quick previews so the user can watch progress. It can also CREATE from scratch: hand-drawn-style animation from a JSON scene (draw), and — with the optional GPU extra — generate images (imagine), music (compose), and cloned-voice narration from the user's own voice (clone). It inspects the video first (contact sheet + review checklist) before asking how to edit, and can grab a PUBLIC YouTube / Steam / Roblox profile avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
 ---
 
 # AI Frame Cut
@@ -65,6 +65,10 @@ whether NVIDIA `--gpu` encoding is available.
 | `thumb VIDEO --at 42 [--width]` | one frame at a timestamp |
 | `transcribe VIDEO [--model base] [--lang en] [--find "phrase,..."] [--device cpu\|cuda]` | on-device Whisper → `.srt/.txt/.json` + spoken **edit-word** marks |
 | `captions VIDEO [--srt FILE] [--style clean\|bold\|yellow\|box\|top] [--size] [--color] [--margin]` | **burn in captions** (auto-transcribes first if no `.srt`). Essential for talking videos and mute-scrolling viewers |
+| `draw SCENE.json [--frame T]` | **hand-drawn animation from a JSON scene** you write — shapes, paths, text, sprites, a silhouette character, petals/clouds/birds/speedlines, keyframed motion, camera. `--frame T` renders one PNG for fast previews. See `examples/dawn.json` |
+| `imagine "prompt" [--width --height --steps --seed --count --negative]` | **generate an image** locally (Stable Diffusion on the GPU). Needs `uv sync --extra ai` |
+| `compose "prompt" [--seconds 10] [-o out.mp3]` | **generate music** locally (MusicGen, up to 30s). Needs the ai extra |
+| `clone --ref VOICE.wav --text "..." --consent` | **speak text in a cloned voice** from the user's OWN recordings (F5-TTS). `--consent` is required. Needs the ai extra |
 | `grade VIDEO [--look cinematic] [--height 1080] [--letterbox 0.07] [--fps] [--gpu]` | one-word color grade |
 | `title --text "..." [--sub "..."] [--cta "SUBSCRIBE & LIKE"] [--logo avatar.png] [--seconds 6] [--style horror] [--size 1920x1080] [--letterbox 0.07] [--silent] -o OUT.mp4` | animated intro/outro card — add `--logo` for a circular channel avatar and `--cta` for a Subscribe/Like pill |
 | `trim VIDEO --start 25 [--end 60] [--reencode]` | cut one span. Default **keyframe-instant**; `--reencode` for frame-accuracy |
@@ -124,6 +128,34 @@ aiframecut concat joined.mp4 intro.mp4 body.mp4 outro.mp4
 aiframecut music joined.mp4 --track music.mp3 --duck -o final.mp4    # music under everything, ducked under speech
 aiframecut preview final.mp4 -o final_preview.mp4                    # then SHOW this to the user
 ```
+
+## Making things from scratch (draw / imagine / compose / clone)
+
+You can now *create*, not just edit. Two tiers:
+
+**Always available (pure code):** `draw`. Write a JSON scene — background, layers of
+shapes/paths/text/sprites, the silhouette `figure`, `petals`/`clouds`/`birds`/`speedlines`,
+`camera` zoom — with any number keyframed as `{"k": [[t, v], ...], "ease": "smooth"}`.
+Multi-scene files use `{"scenes": [...]}` with `fade_in`/`fade_out`. Preview a single moment
+with `--frame T` (fast) before rendering the whole thing. `examples/dawn.json` is a complete
+28-second short — copy it and change things.
+
+**Optional GPU tier** (`uv sync --extra ai`, ~3 GB + models on first use, NVIDIA GPU):
+- `imagine` — Stable Diffusion (DreamShaper-8). Good anime/illustration/landscape results;
+  **not** GPT-image quality — hands and text are still weak. Iterate with `--seed` and
+  `--count 4`; write descriptive prompts with a style ("cel shaded", "watercolor", "photo").
+  Use it for backgrounds, thumbnails, and stills to animate with `draw`'s `sprite` layers.
+- `compose` — MusicGen, up to 30s per pass. Decent loops/ambient/beats, not a produced song.
+  Describe genre + mood + instruments. Feed the result to `music --duck` under a video.
+- `clone` — F5-TTS voice cloning from 10–15s of clean reference speech, then speaks any
+  `--text`/`--script`. **Rule: only the user's own voice, or one they have explicit permission
+  to use.** The command requires `--consent`; ask the user to confirm before passing it, and
+  never clone a public figure or someone who hasn't agreed. Pair with `captions` and `draw`
+  to make a fully narrated short from a script.
+
+Honesty for the user: say "generated locally on your GPU" and be clear about the quality
+ceilings above. Licences: DreamShaper is OpenRAIL-M; F5-TTS and MusicGen **weights are
+CC-BY-NC** (personal use fine — flag it if they plan to monetize).
 
 ## Rules that keep output correct
 

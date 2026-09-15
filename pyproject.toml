@@ -1,6 +1,6 @@
 [project]
 name = "aiframecut"
-version = "0.7.0"
+version = "0.8.0"
 description = "AI Frame Cut — give Claude & ChatGPT eyes, ears, and fast hands for video. Local, no API keys: contact sheets, on-device transcription, edit-word detection, burn-in captions, cinematic grading, branded animated titles (channel avatar + Subscribe/Like), background music with ducking, cutting, audio/voice effects, and quick previews."
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
@@ -10,9 +10,34 @@ dependencies = [
     "faster-whisper>=1.0",
 ]
 
+[project.optional-dependencies]
+# Local generative features (image / music / voice). Heavy — install with:
+#   uv sync --extra ai
+# Needs an NVIDIA GPU; PyTorch comes from the CUDA 12.8 index (supports 50-series cards).
+ai = [
+    "torch>=2.7",
+    "torchaudio>=2.7",
+    "diffusers>=0.30",
+    "transformers>=4.45",
+    "accelerate>=0.30",
+    "safetensors",
+    "scipy",
+    "soundfile",
+    "f5-tts>=1.1",
+]
+
 [project.scripts]
 aiframecut = "aiframecut.cli:main"
 afc = "aiframecut.cli:main"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
 
 [build-system]
 requires = ["hatchling"]

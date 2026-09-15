@@ -6,7 +6,7 @@ AI Frame Cut is a small, **local, no-API-key** video toolkit designed for AI age
 (Claude Code, ChatGPT/Codex, and anything that can run a terminal). Point an agent at
 this repo, tell it *"use this,"* and it can edit whole videos on your device.
 
-It solves four problems an AI has with video:
+It solves five problems an AI has with video:
 
 1. **Seeing it.** LLMs can't watch an MP4. `contact` turns a whole video into one
    labeled contact-sheet image the agent reads in a glance; `scenes` finds cut points;
@@ -24,6 +24,11 @@ It solves four problems an AI has with video:
    edited** — and works step-by-step, handing you a fast **`preview`** after each step so you
    watch it take shape. It can grab a **public YouTube / Steam / Roblox** avatar + name (no API
    key) to brand your intro/outro, and build a **YouTube thumbnail**.
+5. **Creating from scratch.** `draw` renders hand-drawn-style animation from a JSON scene
+   you describe (shapes, text, a character, keyframes). With the optional GPU extra
+   (`uv sync --extra ai`) it can also **generate images** (`imagine`, Stable Diffusion),
+   **generate music** (`compose`, MusicGen), and **narrate in your own cloned voice**
+   (`clone`, F5-TTS, consent required) — all on your NVIDIA GPU, no API keys.
 
 So you can say *"edit this gameplay for YouTube — clean intro with my channel logo, some
 music, cut the boring parts, and a Subscribe outro"* — and the agent asks what you're
@@ -70,7 +75,8 @@ See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 `inspect` · `probe` · `contact` · `scenes` · `frames` · `thumb` · `transcribe` · `captions` ·
 `grade` · `title` · `thumbnail` · `trim` · `cut` · `concat` · `short` · `split` · `smooth` ·
 `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` ·
-`gif` · `audio` · `doctor`
+`gif` · `audio` · `doctor` ·
+**create:** `draw` · `imagine` · `compose` · `clone`
 
 Encode commands support **`--quality max`** (native-res near-lossless), **`--keyint`** (dense
 keyframes), and **`--gpu`** (full NVIDIA decode+encode).

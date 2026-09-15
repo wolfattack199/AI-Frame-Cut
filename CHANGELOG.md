@@ -4,6 +4,25 @@ All notable changes to **AI Frame Cut**. Newest release on top.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/); this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.8.0] — 2026-09-15
+
+### Added — create from scratch
+- **`draw`** — a declarative hand-drawn animation engine. Describe scenes in JSON (shapes,
+  paths, text, sprites, a silhouette character, petals/clouds/birds/speedlines, camera) with
+  keyframed motion; renders on twos with line boil, paper grain and vignette. `--frame T`
+  previews one moment. `examples/dawn.json` is a full 28s short.
+- **Optional GPU tier** (`uv sync --extra ai`; PyTorch from the CUDA 12.8 index so 50-series
+  cards work):
+  - **`imagine`** — local Stable Diffusion image generation (DreamShaper-8 by default).
+  - **`compose`** — local MusicGen text-to-music (up to 30s).
+  - **`clone`** — F5-TTS voice cloning from the user's own recordings; requires `--consent`.
+- `doctor` now reports the PyTorch/CUDA/GPU status.
+
+### Notes
+- F5-TTS's single `torchaudio.load` call is routed through soundfile at runtime, so voice
+  cloning works on Windows without FFmpeg shared DLLs (torchcodec).
+- Generative weights: DreamShaper is OpenRAIL-M; F5-TTS and MusicGen weights are CC-BY-NC.
+
 ## [0.7.0] — 2026-08-22
 
 ### Added

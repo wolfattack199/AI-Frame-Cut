@@ -108,6 +108,8 @@ def cmd_doctor(a):
     if FFMPEG and "h264_nvenc" in run([FFMPEG, "-hide_banner", "-encoders"], check=False).stdout:
         gpu = "h264_nvenc available — pass --gpu for fast encoding"
     print(f"gpu enc    {gpu}")
+    from .gen import gpu_info
+    print(f"ai (torch) {gpu_info()}")
     if FFMPEG:
         v = run([FFMPEG, "-version"]).stdout.splitlines()[0]
         print(f"           {v}")
@@ -592,6 +594,57 @@ def cmd_split(a):
           "then `cut` / `concat` the keepers.")
 
 
+def cmd_imagine(a):
+    """Generate an image locally with Stable Diffusion (needs `uv sync --extra ai`)."""
+    from .gen import NEG_DEFAULT, generate_image
+    out = a.out or "imagine.png"
+    print(f"generating {a.count} image(s) on the GPU ({a.width}x{a.height}, {a.steps} steps)... first run downloads the model (~2 GB)")
+    for line in generate_image(a.prompt, out, negative=(a.negative if a.negative is not None else NEG_DEFAULT),
+                               width=a.width, height=a.height, steps=a.steps, guidance=a.guidance,
+                               seed=a.seed, model=a.model, count=a.count):
+        print("  ->", line)
+
+
+def cmd_compose(a):
+    """Generate music locally with MusicGen (needs `uv sync --extra ai`)."""
+    from .gen import generate_music
+    out = a.out or "compose.wav"
+    print(f"composing {a.seconds:g}s of music on the GPU... first run downloads the model (~1.5 GB)")
+    print("  ->", generate_music(a.prompt, out, seconds=a.seconds, model=a.model, seed=a.seed, guidance=a.guidance))
+
+
+def cmd_clone(a):
+    """Speak text in a cloned voice from the user's OWN reference recordings (F5-TTS)."""
+    if not a.consent:
+        sys.exit("[aiframecut] voice cloning needs --consent: confirm the reference is YOUR voice, "
+                 "or a voice you have explicit permission to clone.")
+    from .gen import clone_voice
+    out = a.out or "clone.wav"
+    text = a.text
+    if a.script:
+        text = Path(a.script).read_text(encoding="utf-8").strip()
+    if not text:
+        sys.exit("[aiframecut] give --text or --script")
+    print("cloning voice on the GPU... first run downloads the model (~1.3 GB)")
+    print("  ->", clone_voice(a.ref, text, out, ref_text=a.ref_text, speed=a.speed, seed=a.seed))
+
+
+def cmd_draw(a):
+    """Render a hand-drawn-style animation from a JSON scene file (see draw.py docstring)."""
+    from .draw import render_frame, render_video
+    if a.frame is not None:
+        out = a.out or default_out(a.scene, f"_t{a.frame:g}.png")
+        render_frame(a.scene, a.frame, out)
+        print(f"frame @ {a.frame:g}s -> {out}")
+        return
+    out = a.out or str(Path(a.scene).with_suffix(".mp4"))
+
+    def prog(si, n, t, dur):
+        print(f"  scene {si + 1}/{n}  {t:5.1f}/{dur:.1f}s", flush=True)
+    render_video(a.scene, out, on_progress=prog)
+    print(f"drawn -> {out}")
+
+
 def cmd_captions(a):
     """Burn captions into the video from an .srt (auto-transcribes first if none given)."""
     srt = a.srt
@@ -805,6 +858,37 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--parts", type=int, help="split into N equal parts")
     sp.add_argument("-o", "--out", help="output dir (default: <video>_chunks)")
     sp.set_defaults(func=cmd_split)
+
+    sp = sub.add_parser("imagine", help="generate an image locally (Stable Diffusion on your GPU; needs `uv sync --extra ai`)")
+    sp.add_argument("prompt"); sp.add_argument("-o", "--out")
+    sp.add_argument("--negative", help="what to avoid (default: a sensible quality negative)")
+    sp.add_argument("--width", type=int, default=768); sp.add_argument("--height", type=int, default=512)
+    sp.add_argument("--steps", type=int, default=28); sp.add_argument("--guidance", type=float, default=7.0)
+    sp.add_argument("--seed", type=int); sp.add_argument("--count", type=int, default=1)
+    sp.add_argument("--model", default="Lykon/dreamshaper-8", help="any diffusers SD1.5 checkpoint on Hugging Face")
+    sp.set_defaults(func=cmd_imagine)
+
+    sp = sub.add_parser("compose", help="generate music from a text prompt (MusicGen on your GPU; needs the ai extra)")
+    sp.add_argument("prompt"); sp.add_argument("-o", "--out", help=".wav or .mp3")
+    sp.add_argument("--seconds", type=float, default=10.0, help="up to 30")
+    sp.add_argument("--guidance", type=float, default=3.0); sp.add_argument("--seed", type=int)
+    sp.add_argument("--model", default="facebook/musicgen-small")
+    sp.set_defaults(func=cmd_compose)
+
+    sp = sub.add_parser("clone", help="speak text in a cloned voice from YOUR reference recordings (F5-TTS; needs the ai extra)")
+    sp.add_argument("--ref", required=True, help="a recording, or a folder of recordings, of the voice (10-15s clean speech is ideal)")
+    sp.add_argument("--text"); sp.add_argument("--script", help="text file to read instead of --text")
+    sp.add_argument("--ref-text", dest="ref_text", help="exact words in the reference (auto-transcribed if omitted)")
+    sp.add_argument("--speed", type=float, default=1.0); sp.add_argument("--seed", type=int)
+    sp.add_argument("--consent", action="store_true", help="REQUIRED: this is my own voice, or I have permission")
+    sp.add_argument("-o", "--out", help=".wav or .mp3")
+    sp.set_defaults(func=cmd_clone)
+
+    sp = sub.add_parser("draw", help="render a hand-drawn-style animation from a JSON scene file (shapes, paths, text, sprites, character, keyframes)")
+    sp.add_argument("scene", help="scene .json (single scene or {\"scenes\": [...]})")
+    sp.add_argument("-o", "--out")
+    sp.add_argument("--frame", type=float, help="render one PNG at this time instead of the video (fast preview)")
+    sp.set_defaults(func=cmd_draw)
 
     sp = sub.add_parser("captions", help="burn captions into the video from an .srt (auto-transcribes if needed)")
     sp.add_argument("video"); sp.add_argument("--srt", help="subtitle file (default: alongside the video, else transcribe)")

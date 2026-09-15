@@ -1,0 +1,80 @@
+{
+  "size": [1920, 1080],
+  "fps": 24,
+  "on_twos": true,
+  "style": {"paper": true, "paper_strength": 0.55, "boil": 1.6, "vignette": true},
+  "scenes": [
+    {
+      "duration": 3.2, "fade_out": 0.5,
+      "background": {"type": "paper"},
+      "layers": [
+        {"type": "text", "text": "夜明け", "font": "jp", "size": 190, "at": [960, 500], "brush": true, "jitter": 2.5, "flecks": 22, "from": 0.3},
+        {"type": "path", "points": [[790, 615], [1130, 615]], "stroke": 3, "from": 0.6},
+        {"type": "text", "text": "D A W N", "font": "sans", "size": 44, "at": [960, 660], "brush": true, "jitter": 1, "flecks": 0, "from": 0.6}
+      ]
+    },
+    {
+      "duration": 6.0, "fade_in": 0.6,
+      "background": {"type": "gradient",
+        "top": {"k": [[0, [28, 24, 66]], [6, [46, 52, 110]]]},
+        "mid": {"k": [[0, [196, 96, 84]], [6, [230, 130, 96]]]},
+        "bottom": {"k": [[0, [255, 178, 96]], [6, [255, 200, 120]]]}},
+      "camera": {"zoom": {"k": [[0, 1.0], [6, 1.05]]}},
+      "layers": [
+        {"type": "ellipse", "center": {"k": [[0, [1040, 700]], [6, [1040, 590]]]}, "radius": 95, "fill": [255, 241, 205], "glow": [255, 214, 120]},
+        {"type": "clouds", "seed": 11, "count": 7, "opacity": 110},
+        {"type": "ridge", "seed": 21, "base": 610, "amp": 70, "fill": [128, 82, 120], "stroke": 3, "scroll": {"k": [[0, 0], [6, 54]]}},
+        {"type": "ridge", "seed": 22, "base": 715, "amp": 92, "fill": [88, 52, 92], "stroke": 4, "scroll": {"k": [[0, 0], [6, 126]]}},
+        {"type": "ridge", "seed": 23, "base": 835, "amp": 115, "fill": [50, 30, 58], "stroke": 5, "scroll": {"k": [[0, 0], [6, 216]]}},
+        {"type": "petals", "count": 10}
+      ]
+    },
+    {
+      "duration": 6.8,
+      "background": {"type": "gradient", "top": [48, 58, 122], "mid": [238, 140, 98], "bottom": [255, 204, 124]},
+      "camera": {"zoom": {"k": [[0, 1.0], [6.8, 1.10]]}, "center": [1150, 760]},
+      "layers": [
+        {"type": "ellipse", "center": [1180, 540], "radius": 150, "fill": [255, 241, 205], "glow": [255, 200, 110]},
+        {"type": "clouds", "seed": 11, "count": 7, "opacity": 90},
+        {"type": "ridge", "seed": 22, "base": 760, "amp": 80, "fill": [98, 62, 104], "stroke": 3},
+        {"type": "ridge", "seed": 31, "base": 905, "amp": 60, "fill": [34, 46, 40], "stroke": 5,
+         "grass": {"seed": 4, "color": [20, 30, 26]}},
+        {"type": "figure", "at": [1180, 909], "height": 380, "pose": "stand", "wind": {"k": [[0, 1.0], [6.8, 1.5]]}},
+        {"type": "petals", "count": 42}
+      ]
+    },
+    {
+      "duration": 3.0,
+      "background": {"type": "gradient", "top": [255, 120, 60], "mid": [255, 160, 80], "bottom": [255, 210, 130]},
+      "camera": {"zoom": {"k": [[0, 1.0], [1.9, 1.22]], "ease": "out"}, "center": [960, 640]},
+      "layers": [
+        {"type": "flash", "color": [246, 240, 228], "opacity": 1.0, "to": 0.24},
+        {"type": "speedlines", "center": [960, 560], "count": {"k": [[0, 140], [3, 45]]}, "max_width": 8},
+        {"type": "figure", "at": [960, 900], "height": 560, "pose": "turn", "wind": 1.8, "lean": {"k": [[0, -0.12], [3, 0.0]]}},
+        {"type": "petals", "count": 30, "speed": 3}
+      ]
+    },
+    {
+      "duration": 6.2, "fade_out": 0.7,
+      "background": {"type": "gradient", "top": [96, 150, 208], "mid": [250, 192, 122], "bottom": [255, 226, 160]},
+      "layers": [
+        {"type": "ellipse", "center": [1500, 300], "radius": 110, "fill": [255, 241, 205], "glow": [255, 236, 170]},
+        {"type": "clouds", "seed": 13, "count": 7, "opacity": 130},
+        {"type": "birds", "at": [1500, 250], "count": 6},
+        {"type": "ridge", "seed": 25, "base": 780, "amp": 70, "fill": [150, 120, 150], "stroke": 3},
+        {"type": "ridge", "seed": 41, "base": 930, "amp": 45, "fill": [46, 74, 52], "stroke": 5,
+         "grass": {"seed": 6, "color": [26, 44, 30]}},
+        {"type": "figure", "at": {"k": [[0, [260, 934]], [6.2, [1640, 934]]]}, "height": 380, "pose": "walk", "walk_speed": 7.0, "wind": 0.9},
+        {"type": "petals", "count": 18}
+      ]
+    },
+    {
+      "duration": 2.8, "fade_in": 0.8,
+      "background": {"type": "paper"},
+      "layers": [
+        {"type": "text", "text": "夜明け", "font": "jp", "size": 190, "at": [960, 480], "brush": true, "flecks": 18},
+        {"type": "text", "text": "完", "font": "jp", "size": 92, "at": [960, 690], "brush": true, "jitter": 1.2, "flecks": 6}
+      ]
+    }
+  ]
+}

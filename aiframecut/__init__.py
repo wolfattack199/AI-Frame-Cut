@@ -11,4 +11,4 @@ No cloud services, no API keys (the only network use is the public profile fetch
 one-time Whisper model download). Everything runs on the user's own device.
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
