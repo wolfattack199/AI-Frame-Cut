@@ -113,8 +113,23 @@ def _patch_torchaudio_load():
 
 
 # -------------------------------------------------------------- voice clone
-def _prep_reference(ref: str, max_seconds: float = 11.0) -> str:
-    """Take a file or a folder of recordings; return one clean 24 kHz mono WAV (<= max_seconds)."""
+def _peak_db(path: str) -> float:
+    """Peak level of a file in dBFS (via ffmpeg volumedetect)."""
+    import re
+    import subprocess
+    from ._ffmpeg import FFMPEG
+    r = subprocess.run([FFMPEG, "-i", path, "-af", "volumedetect", "-f", "null", "-"], capture_output=True, text=True)
+    m = re.search(r"max_volume:\s*(-?[\d.]+) dB", r.stderr)
+    return float(m.group(1)) if m else 0.0
+
+
+def _prep_reference(ref: str, max_seconds: float = 12.0, denoise: bool = False) -> str:
+    """Take a file or a folder of recordings; return one 24 kHz mono WAV (<= max_seconds).
+
+    Gain is normalized FIRST (static, to -3 dBFS peak) so quiet recordings are not mistaken for
+    noise. Denoising is OFF by default: the model copies whatever it hears in the reference, and
+    denoiser artifacts ("squeaky", watery) are far worse than a little room tone. `denoise=True`
+    applies a gentle, noise-tracking reduction after the gain stage."""
     from ._ffmpeg import ffmpeg
     p = Path(ref)
     files = sorted(x for x in p.iterdir() if x.suffix.lower() in (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".mp4", ".webm")) if p.is_dir() else [p]
@@ -123,9 +138,14 @@ def _prep_reference(ref: str, max_seconds: float = 11.0) -> str:
     tmp = Path(tempfile.mkdtemp(prefix="afc_ref_"))
     lst = tmp / "list.txt"
     lst.write_text("".join(f"file '{f.resolve().as_posix()}'\n" for f in files), encoding="utf-8")
+    raw = str(tmp / "raw.wav")
+    ffmpeg(["-f", "concat", "-safe", "0", "-i", str(lst), "-t", str(max_seconds), "-ac", "1", "-ar", "24000", raw])
+    gain = -3.0 - _peak_db(raw)
+    chain = f"highpass=f=60,volume={gain:.1f}dB"
+    if denoise:
+        chain += ",afftdn=nr=10:nf=-60:tn=1"
     out = str(tmp / "ref.wav")
-    ffmpeg(["-f", "concat", "-safe", "0", "-i", str(lst), "-t", str(max_seconds),
-            "-af", "afftdn=nf=-22,loudnorm=I=-18:TP=-2", "-ac", "1", "-ar", "24000", out])
+    ffmpeg(["-i", raw, "-af", chain, out])
     return out
 
 
@@ -136,21 +156,55 @@ def _transcribe_ref(wav: str) -> str:
     return " ".join(s.text.strip() for s in segs).strip()
 
 
+def _split_sentences(text: str) -> list[list[str]]:
+    """Paragraphs -> sentences. Keeps punctuation; drops empties."""
+    import re
+    paras = []
+    for para in re.split(r"\n\s*\n", text.strip()):
+        sents = [x.strip() for x in re.split(r"(?<=[.!?\u2026])\s+", para.replace("\n", " ")) if x.strip()]
+        if sents:
+            paras.append(sents)
+    return paras
+
+
 def clone_voice(ref: str, text: str, out: str, ref_text: str | None = None, speed: float = 1.0,
-                seed: int | None = None) -> str:
-    """Speak `text` in the voice from `ref` (a file or folder of the user's OWN recordings)."""
+                seed: int | None = None, steps: int = 48, pause: float = 0.35, para_pause: float = 0.7,
+                denoise: bool = False) -> str:
+    """Speak `text` in the voice from `ref` (a file or folder of the user's OWN recordings).
+
+    Generates sentence by sentence and joins them with real pauses (`pause` s between sentences,
+    `para_pause` s between paragraphs) — smoother and more natural than one long pass, and pauses are
+    never stripped. `steps` = diffusion steps (32 fast, 48 default, 64 best)."""
     _need_ai("clone")
     _patch_torchaudio_load()
+    import numpy as np
+    import soundfile as sf
     from f5_tts.api import F5TTS
-    ref_wav = _prep_reference(ref)
+    ref_wav = _prep_reference(ref, denoise=denoise)
     if not ref_text:
         ref_text = _transcribe_ref(ref_wav)
         if not ref_text:
             sys.exit("[aiframecut] couldn't hear any speech in the reference audio — use a clean clip of just the voice.")
     tts = F5TTS()
+    pieces, sr = [], 24000
+    paras = _split_sentences(text)
+    for pi, sents in enumerate(paras):
+        for si, sent in enumerate(sents):
+            wav, sr, _ = tts.infer(ref_file=ref_wav, ref_text=ref_text, gen_text=sent, speed=speed, seed=seed,
+                                   nfe_step=steps, remove_silence=False, show_info=lambda *a, **k: None)
+            wav = np.asarray(wav, dtype=np.float32)
+            # trim leading/trailing near-silence so our pauses are the only pauses
+            thr = 0.01 * max(1e-6, float(np.abs(wav).max())); idx = np.where(np.abs(wav) > thr)[0]
+            if len(idx):
+                wav = wav[max(0, idx[0] - int(0.05 * sr)):min(len(wav), idx[-1] + int(0.08 * sr))]
+            pieces.append(wav)
+            last = (si == len(sents) - 1)
+            gap = para_pause if (last and pi < len(paras) - 1) else (pause if not last else 0.0)
+            if gap:
+                pieces.append(np.zeros(int(gap * sr), np.float32))
+    audio = np.concatenate(pieces) if pieces else np.zeros(sr, np.float32)
     wav_out = str(Path(out).with_suffix(".wav"))
-    tts.infer(ref_file=ref_wav, ref_text=ref_text, gen_text=text, file_wave=wav_out,
-              speed=speed, seed=seed, remove_silence=True)
+    sf.write(wav_out, audio, sr)
     if Path(out).suffix.lower() != ".wav":
         from ._ffmpeg import ffmpeg
         ffmpeg(["-i", wav_out, "-b:a", "192k", out])

@@ -626,7 +626,8 @@ def cmd_clone(a):
     if not text:
         sys.exit("[aiframecut] give --text or --script")
     print("cloning voice on the GPU... first run downloads the model (~1.3 GB)")
-    print("  ->", clone_voice(a.ref, text, out, ref_text=a.ref_text, speed=a.speed, seed=a.seed))
+    print("  ->", clone_voice(a.ref, text, out, ref_text=a.ref_text, speed=a.speed, seed=a.seed, steps=a.steps,
+                              pause=a.pause, para_pause=a.para_pause, denoise=a.denoise))
 
 
 def cmd_draw(a):
@@ -881,6 +882,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--ref-text", dest="ref_text", help="exact words in the reference (auto-transcribed if omitted)")
     sp.add_argument("--speed", type=float, default=1.0); sp.add_argument("--seed", type=int)
     sp.add_argument("--consent", action="store_true", help="REQUIRED: this is my own voice, or I have permission")
+    sp.add_argument("--steps", type=int, default=48, help="diffusion steps: 32 fast, 48 default, 64 best")
+    sp.add_argument("--pause", type=float, default=0.35, help="seconds of silence between sentences")
+    sp.add_argument("--para-pause", dest="para_pause", type=float, default=0.7, help="seconds between paragraphs")
+    sp.add_argument("--denoise", action="store_true", help="gentle noise reduction on the reference (off by default)")
     sp.add_argument("-o", "--out", help=".wav or .mp3")
     sp.set_defaults(func=cmd_clone)
 

@@ -152,6 +152,11 @@ with `--frame T` (fast) before rendering the whole thing. `examples/dawn.json` i
   to use.** The command requires `--consent`; ask the user to confirm before passing it, and
   never clone a public figure or someone who hasn't agreed. Pair with `captions` and `draw`
   to make a fully narrated short from a script.
+  **Recording advice (tell the user before they record):** 15–30s of natural talking, not
+  single words; mic only (no game/music); normal gain (meter in the yellow); and **turn off noise
+  gates / noise suppression** (OBS, Discord) for the reference clip — the model imitates the
+  gate's hard cuts and the suppressed top end, which sounds robotic. Show the user the script and
+  get a yes before generating; speech is built sentence by sentence with real pauses.
 
 Honesty for the user: say "generated locally on your GPU" and be clear about the quality
 ceilings above. Licences: DreamShaper is OpenRAIL-M; F5-TTS and MusicGen **weights are

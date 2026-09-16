@@ -4,6 +4,20 @@ All notable changes to **AI Frame Cut**. Newest release on top.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/); this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.8.1] — 2026-09-16
+
+### Fixed
+- **`clone`** — quiet reference recordings were being destroyed by a fixed-threshold denoiser
+  (the voice was treated as noise), producing robotic, squeaky output. The reference is now
+  gain-normalized first, and denoising is **off by default** (`--denoise` for a gentle,
+  noise-tracking pass).
+- **`clone`** — output no longer strips pauses. Speech is generated sentence by sentence and joined
+  with natural gaps (`--pause`, `--para-pause`), which removes the choppy seams of one long pass.
+
+### Added
+- `clone --steps` (32 fast / 48 default / 64 best).
+- SKILL.md: recording advice — disable OBS/Discord noise gates and suppression for the reference clip.
+
 ## [0.8.0] — 2026-09-15
 
 ### Added — create from scratch
