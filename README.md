@@ -76,7 +76,8 @@ See [`SKILL.md`](SKILL.md) for the full command reference and agent recipes.
 `grade` · `title` · `thumbnail` · `trim` · `cut` · `concat` · `short` · `split` · `smooth` ·
 `voice` · `music` · `preview` · `profile` (YouTube/Steam/Roblox) · `speed` · `resize` ·
 `gif` · `audio` · `doctor` ·
-**create:** `draw` · `imagine` · `compose` · `clone`
+**create:** `draw` · `imagine` (+ `--init`) · `inpaint` · `cutout` · `depth` · `compose` · `clone` ·
+**honesty:** `critique` (why does this look AI?) · `detect` (what a detector will say)
 
 Encode commands support **`--quality max`** (native-res near-lossless), **`--keyint`** (dense
 keyframes), and **`--gpu`** (full NVIDIA decode+encode).

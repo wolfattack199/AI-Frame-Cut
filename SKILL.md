@@ -158,6 +158,15 @@ with `--frame T` (fast) before rendering the whole thing. `examples/dawn.json` i
   gate's hard cuts and the suppressed top end, which sounds robotic. Show the user the script and
   get a yes before generating; speech is built sentence by sentence with real pauses.
 
+- `inpaint IMG MASK "prompt"` — repaint only the white mask area (fix a hand, change a colour, make a
+  talking/blink state from one drawing). `cutout IMG` — transparent background. `depth IMG` — depth map.
+- **Before showing generated art to the user, run `critique` on it** and read the tells back to them
+  (hands, eyes, text, sheen). It is a small model: it misses things, so still look yourself. `detect`
+  says what a ZeroGPT-style site will say — raw generated images score "AI" no matter what; tell the
+  user that plainly. Never try to make generated images evade detectors or pass as hand-made; if the
+  user wants art that won't be called AI, the honest answer is a human artist (offer to do the
+  cutting/packaging around their work instead).
+
 Honesty for the user: say "generated locally on your GPU" and be clear about the quality
 ceilings above. Licences: DreamShaper is OpenRAIL-M; F5-TTS and MusicGen **weights are
 CC-BY-NC** (personal use fine — flag it if they plan to monetize).

@@ -4,6 +4,36 @@ All notable changes to **AI Frame Cut**. Newest release on top.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/); this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.9.0] — 2026-09-19
+
+### Added — honesty tools
+- **`critique`** — "does this look AI-made, and why?" A local vision model works through the
+  visible tells (hands, eyes, text, half-formed objects, straps that go nowhere, extra limbs,
+  sheen, generator-sized canvas, hidden prompt metadata) and prints each with a reason and a fix,
+  plus a 0–100 tells score. `--model` picks a bigger Qwen2-VL for fewer misses.
+- **`detect`** — a local pixel-statistics AI-vs-human classifier (what ZeroGPT-style sites run),
+  so you know what you'll be told before posting. Tested three open detectors on anime art: they
+  disagree wildly (one calls everything AI, one calls raw SD output human); the default is the
+  one that was right most often. Raw generated images score high by nature — this tool does not
+  and will not try to change that.
+
+### Added — image tools
+- **`imagine --init IMG --strength S`** — image-to-image: keep a composition and restyle/relight it;
+  also a "hires fix" (small render → big img2img at low strength).
+- **`inpaint`** — repaint only the white area of a mask; everything else stays pixel-identical.
+- **`cutout`** — subject onto transparency (rembg).
+- **`depth`** — depth map for a painting, for parallax in `draw`.
+
+### Added — draw engine
+- Sprites: `fit: cover`, `depth` + `parallax` (2.5D camera moves on a painting), `brightness`,
+  `tint`; `screen: true` layers ignore the camera (subtitles, clocks). New effects `stars`,
+  `lights`, `rays`; `ellipse` glow is smooth and `cut` erases a circle (eclipses); figure poses
+  `sit`/`hold` and a `lantern`; text `opacity`; scene `fade_to: black`; `--gpu` NVENC; frames
+  stream to ffmpeg (no temp PNGs). Used to make a 4-minute film from 13 generated paintings.
+
+### Fixed
+- `clone`: reference prep no longer denoises by default (was stripping quiet voices).
+
 ## [0.8.1] — 2026-09-16
 
 ### Fixed

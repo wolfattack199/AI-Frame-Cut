@@ -24,14 +24,13 @@ import json
 import math
 import os
 import random
-import shutil
-import tempfile
+import subprocess
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from ._ffmpeg import ffmpeg
+from ._ffmpeg import FFMPEG, ffmpeg
 
 INK = (26, 20, 24)
 PAPER = (246, 240, 228)
@@ -218,6 +217,53 @@ class Renderer:
             self._sprites[p] = Image.open(p).convert("RGBA")
         return self._sprites[p]
 
+    def _glow(self, color, radius, strength):
+        key = ("glow", color, radius, strength)
+        if key not in self._sprites:
+            n = max(4, radius * 2); yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+            rr = np.sqrt((xx - n / 2) ** 2 + (yy - n / 2) ** 2) / (n / 2)
+            a = np.clip(1 - rr, 0, 1) ** 2.2 * 255 * min(1.0, 0.22 * strength)
+            im = np.zeros((n, n, 4), np.uint8); im[..., :3] = color; im[..., 3] = a.astype(np.uint8)
+            if len(self._sprites) > 80:
+                self._sprites = {k: v for k, v in self._sprites.items() if not (isinstance(k, tuple) and k[0] == "glow")}
+            self._sprites[key] = Image.fromarray(im, "RGBA")
+        return self._sprites[key]
+
+    def _scaled(self, src, size):
+        key = (src, size)
+        if key not in self._sprites:
+            if len(self._sprites) > 24:
+                self._sprites = {k: v for k, v in self._sprites.items() if not isinstance(k, tuple)}
+            self._sprites[key] = self.sprite(src).resize(size, Image.LANCZOS)
+        return self._sprites[key]
+
+    def _parallax(self, src, depth_src, size, px, py):
+        """Shift each pixel by (px, py) * depth (near = 1). Cheap 2.5D camera move on a painting."""
+        from scipy.ndimage import map_coordinates
+        dkey = ("depth", depth_src, size)
+        if dkey not in self._sprites:
+            dp = str(self.base / depth_src) if not os.path.isabs(depth_src) else depth_src
+            dm = Image.open(dp).convert("L").resize(size, Image.BILINEAR)
+            self._sprites[dkey] = np.asarray(dm, np.float32) / 255.0
+        depth = self._sprites[dkey]
+        gkey = ("grid", size)
+        if gkey not in self._sprites:
+            h, w = depth.shape
+            yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+            self._sprites[gkey] = (xx, yy)
+        xx, yy = self._sprites[gkey]
+        sx = xx - px * depth; sy = yy - py * depth            # sample from where the pixel came from
+        arr = np.asarray(self._scaled(src, size))
+        try:
+            import cv2
+            out = cv2.remap(arr, sx, sy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        except ImportError:                                   # slow fallback
+            arr = arr.astype(np.float32); out = np.empty_like(arr)
+            for c in range(4):
+                out[..., c] = map_coordinates(arr[..., c], [sy, sx], order=1, mode="nearest")
+            out = np.clip(out, 0, 255).astype(np.uint8)
+        return Image.fromarray(np.ascontiguousarray(out), "RGBA")
+
     def draw_layer(self, img, L, t, rng):
         W, H = self.W, self.H
         if t < float(L.get("from", -1e9)) or t > float(L.get("to", 1e9)):
@@ -231,14 +277,18 @@ class Renderer:
         if kind == "ellipse":
             cx, cy = val(L["center"], t); r = float(val(L["radius"], t))
             ry = float(val(L.get("radius_y", r), t))
-            if L.get("glow"):
-                g = Image.new("RGBA", (W, H), (0, 0, 0, 0)); gd = ImageDraw.Draw(g)
-                gc = rgb(val(L["glow"], t))
-                for k in range(7, 0, -1):
-                    rr, rry = r * (1 + k * 0.38), ry * (1 + k * 0.38)
-                    gd.ellipse([cx - rr, cy - rry, cx + rr, cy + rry], fill=gc + (max(4, 30 - k * 3),))
-                img.alpha_composite(g); d = ImageDraw.Draw(img)
-            if L.get("fill") is not None:
+            if L.get("glow"):                                  # smooth radial glow (cached per look)
+                gc = rgb(val(L["glow"], t)); gs = float(val(L.get("glow_strength", 1.0), t)); gsp = float(L.get("glow_spread", 0.38))
+                g = self._glow(gc, int(r * (1 + 7 * gsp)), round(gs, 2))
+                img.alpha_composite(g, (int(cx - g.width / 2), int(cy - g.height / 2))); d = ImageDraw.Draw(img)
+            cut = L.get("cut")                                  # erase a circle from the disc (a bitten sun)
+            if L.get("fill") is not None and cut:
+                lay = Image.new("RGBA", (W, H), (0, 0, 0, 0)); ld = ImageDraw.Draw(lay)
+                ld.ellipse([cx - r, cy - ry, cx + r, cy + ry], fill=rgba(val(L["fill"], t)))
+                ccx, ccy = val(cut["center"], t); cr = float(val(cut.get("radius", r), t))
+                ld.ellipse([ccx - cr, ccy - cr, ccx + cr, ccy + cr], fill=(0, 0, 0, 0))
+                img.alpha_composite(lay); d = ImageDraw.Draw(img)
+            elif L.get("fill") is not None:
                 d.ellipse([cx - r, cy - ry, cx + r, cy + ry], fill=rgba(val(L["fill"], t)))
             if stroke > 0:
                 n = 40
@@ -278,32 +328,95 @@ class Renderer:
                     ink_stroke(d, [(x, gy + 6), (x + lean * 0.5, gy - h * 0.55), (x + lean, gy - h)], rng, 1.4, 3, gc)
 
         elif kind == "text":
+            op = float(val(L.get("opacity", 1.0), t))
+            if op <= 0:
+                return img
+            layer = img if op >= 0.999 else Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            td = ImageDraw.Draw(layer)
             x, y = val(L["at"], t); size = int(val(L.get("size", 80), t))
             f = font(L.get("font", "sans"), size); color = rgb(val(L.get("color", ink), t))
             text = L["text"]
             if L.get("brush", False):
                 jit = float(L.get("jitter", 2.0))
                 for _ in range(3):
-                    d.text((x + rng.uniform(-jit, jit), y + rng.uniform(-jit, jit)), text, font=f, fill=color, anchor="mm")
-                x0, y0, x1, y1 = d.textbbox((x, y), text, font=f, anchor="mm")
+                    td.text((x + rng.uniform(-jit, jit), y + rng.uniform(-jit, jit)), text, font=f, fill=color, anchor="mm")
+                x0, y0, x1, y1 = td.textbbox((x, y), text, font=f, anchor="mm")
                 for _ in range(int(L.get("flecks", 14))):
                     fx = rng.uniform(x0 - 40, x1 + 40); fy = rng.uniform(y0 - 20, y1 + 20); r = rng.uniform(1, 4.5)
-                    d.ellipse([fx - r, fy - r, fx + r, fy + r], fill=color)
+                    td.ellipse([fx - r, fy - r, fx + r, fy + r], fill=color)
             else:
                 sw = int(L.get("outline", 0))
-                d.text((x, y), text, font=f, fill=color, anchor=L.get("anchor", "mm"),
-                       stroke_width=sw, stroke_fill=rgb(L.get("outline_color", ink)))
+                td.text((x, y), text, font=f, fill=color, anchor=L.get("anchor", "mm"),
+                        stroke_width=sw, stroke_fill=rgb(L.get("outline_color", ink)))
+            if layer is not img:
+                layer.putalpha(layer.getchannel("A").point(lambda v, o=op: int(v * o)))
+                img.alpha_composite(layer)
 
         elif kind == "sprite":
+            op = float(val(L.get("opacity", 1.0), t))
+            if op <= 0:
+                return img
             im = self.sprite(L["src"])
             sc = float(val(L.get("scale", 1.0), t)); rot = float(val(L.get("rotate", 0), t))
-            op = float(val(L.get("opacity", 1.0), t)); x, y = val(L["at"], t)
-            sp = im.resize((max(1, int(im.width * sc)), max(1, int(im.height * sc))), Image.LANCZOS)
+            if L.get("fit") == "cover":                      # scale to fill the frame (plus `scale` on top)
+                sc *= max(W / im.width, H / im.height)
+            x, y = val(L.get("at", [W / 2, H / 2]), t)
+            size = (max(1, int(im.width * sc)), max(1, int(im.height * sc)))
+            sp = self._scaled(L["src"], size)
+            if L.get("depth"):                               # 2.5D parallax: shift pixels by depth
+                px, py = val(L.get("parallax", [0, 0]), t)
+                if abs(px) > 0.01 or abs(py) > 0.01:
+                    sp = self._parallax(L["src"], L["depth"], size, float(px), float(py))
+            br = float(val(L.get("brightness", 1.0), t)); tint = L.get("tint")
+            if abs(br - 1.0) > 0.002 or tint is not None:
+                arr = np.asarray(sp).astype(np.float32)
+                m = (np.array(val(tint, t), np.float32) / 255.0) if tint is not None else np.ones(3, np.float32)
+                arr[..., :3] = np.clip(arr[..., :3] * br * m, 0, 255)
+                sp = Image.fromarray(arr.astype(np.uint8), "RGBA")
             if rot:
                 sp = sp.rotate(-rot, resample=Image.BICUBIC, expand=True)
             if op < 1:
-                sp.putalpha(sp.getchannel("A").point(lambda v: int(v * op)))
+                sp = sp.copy(); sp.putalpha(sp.getchannel("A").point(lambda v, o=op: int(v * o)))
             img.alpha_composite(sp, (int(x - sp.width / 2), int(y - sp.height / 2)))
+
+        elif kind == "stars":  # twinkling points; opacity keyframable so they can fade in at dusk
+            op = float(val(L.get("opacity", 1.0), t))
+            if op > 0:
+                r = random.Random(int(L.get("seed", 3))); col = rgb(L.get("color", [255, 250, 235]))
+                y0, y1 = L.get("band", [0, H * 0.6]); layer = Image.new("RGBA", (W, H), (0, 0, 0, 0)); ld = ImageDraw.Draw(layer)
+                for _i in range(int(L.get("count", 160))):
+                    x, y, sz, ph = r.uniform(0, W), r.uniform(y0, y1), r.uniform(0.8, 2.6), r.uniform(0, 6.28)
+                    a_ = int(255 * op * (0.55 + 0.45 * math.sin(t * 2.1 + ph)))
+                    ld.ellipse([x - sz, y - sz, x + sz, y + sz], fill=col + (max(0, a_),))
+                img.alpha_composite(layer)
+
+        elif kind == "lights":  # scattered warm lights in a region; "on" = fraction lit (keyframable)
+            on = float(val(L.get("on", 1.0), t))
+            if on > 0:
+                r = random.Random(int(L.get("seed", 8))); col = rgb(L.get("color", [255, 200, 120]))
+                x0, y0, x1, y1 = L.get("region", [0, H * 0.6, W, H]); layer = Image.new("RGBA", (W, H), (0, 0, 0, 0)); ld = ImageDraw.Draw(layer)
+                for i in range(int(L.get("count", 120))):
+                    x, y, sz, th = r.uniform(x0, x1), r.uniform(y0, y1), r.uniform(1.5, 4.0), r.random()
+                    if th > on:
+                        continue
+                    a_ = int(230 * (0.75 + 0.25 * math.sin(t * 3 + i)))
+                    ld.ellipse([x - sz * 3, y - sz * 3, x + sz * 3, y + sz * 3], fill=col + (int(a_ * 0.18),))
+                    ld.ellipse([x - sz, y - sz, x + sz, y + sz], fill=col + (a_,))
+                img.alpha_composite(layer)
+
+        elif kind == "rays":  # soft light rays from a point (godrays); opacity keyframable
+            op = float(val(L.get("opacity", 0.5), t))
+            if op > 0:
+                cx, cy = val(L.get("center", [W / 2, H * 0.3]), t); col = rgb(L.get("color", [255, 230, 180]))
+                q = 4; cx, cy = cx / q, cy / q                  # drawn at quarter res, blurred, upscaled (cheap)
+                r = random.Random(int(L.get("seed", 5))); layer = Image.new("RGBA", (W // q, H // q), (0, 0, 0, 0)); ld = ImageDraw.Draw(layer)
+                for i in range(int(L.get("count", 14))):
+                    a0 = r.uniform(0, 6.283) + 0.05 * math.sin(t * 0.7 + i); wdt = r.uniform(0.02, 0.07)
+                    ln = max(W, H) * 1.6 / q
+                    pts = [(cx, cy), (cx + ln * math.cos(a0 - wdt), cy + ln * math.sin(a0 - wdt)), (cx + ln * math.cos(a0 + wdt), cy + ln * math.sin(a0 + wdt))]
+                    ld.polygon(pts, fill=col + (int(255 * op * r.uniform(0.05, 0.14)),))
+                layer = layer.filter(ImageFilter.GaussianBlur(max(1, int(L.get("blur", 40)) // q))).resize((W, H), Image.BILINEAR)
+                img.alpha_composite(layer)
 
         elif kind == "figure":
             self.figure(d, L, t, rng)
@@ -341,13 +454,18 @@ class Renderer:
         ink = rgb(val(L.get("color", self.ink), t)); scarf = rgb(val(L.get("scarf", [176, 32, 44]), t))
         amp = 1.2
 
+        oy = 0.40 if pose == "sit" else 0.0                 # sitting: `at` is the seat point
+
         def P(x, y):
-            x *= facing
+            x *= facing; y += oy
             if lean:
                 c, sn = math.cos(lean), math.sin(lean); x, y = x * c - y * sn, x * sn + y * c
             return (cx + x * s, cy + y * s)
 
-        if pose == "walk":
+        if pose == "sit":                                     # legs dangling over an edge
+            ink_stroke(d, [P(0.03, -0.42), P(0.20, -0.36), P(0.22, -0.10)], rng, amp, 0.085 * s, ink)
+            ink_stroke(d, [P(-0.03, -0.42), P(0.17, -0.33), P(0.19, -0.06)], rng, amp, 0.085 * s, ink)
+        elif pose == "walk":
             for sign in (1, -1):
                 sw = sign * math.sin(phase)
                 ink_stroke(d, [P(0.03 * sign, -0.42), P(0.12 * sw + 0.02, -0.22 - 0.05 * max(0.0, sw)), P(0.21 * sw, -0.055 * max(0.0, sw))], rng, amp, 0.085 * s, ink)
@@ -365,9 +483,29 @@ class Renderer:
         elif pose == "point":
             ink_stroke(d, [P(-0.11, -0.73), P(-0.15, -0.58), P(-0.16, -0.43)], rng, amp, 0.065 * s, ink)
             ink_stroke(d, [P(0.11, -0.73), P(0.30, -0.74), P(0.48, -0.76)], rng, amp, 0.065 * s, ink)
+        elif pose == "hold":                                  # one arm out, holding something
+            ink_stroke(d, [P(-0.11, -0.73), P(-0.15, -0.58), P(-0.16, -0.43)], rng, amp, 0.065 * s, ink)
+            ink_stroke(d, [P(0.11, -0.73), P(0.24, -0.62), P(0.30, -0.50)], rng, amp, 0.065 * s, ink)
+        elif pose == "sit":
+            ink_stroke(d, [P(-0.11, -0.73), P(-0.17, -0.58), P(-0.19, -0.44)], rng, amp, 0.065 * s, ink)
+            ink_stroke(d, [P(0.11, -0.73), P(0.20, -0.58), P(0.22, -0.42)], rng, amp, 0.065 * s, ink)
         else:
             ink_stroke(d, [P(-0.11, -0.73), P(-0.15, -0.58), P(-0.16, -0.43)], rng, amp, 0.065 * s, ink)
             ink_stroke(d, [P(0.11, -0.73), P(0.16, -0.58), P(0.17, -0.44)], rng, amp, 0.065 * s, ink)
+        lan = L.get("lantern")
+        if lan:                                               # a glowing lantern hanging from the hand
+            hand = {"hold": P(0.30, -0.50), "sit": P(0.22, -0.42), "point": P(0.48, -0.76)}.get(pose, P(0.17, -0.44))
+            lit = float(val(lan.get("lit", 1.0), t)); lr = 0.045 * s * float(lan.get("size", 1.0))
+            lx, ly = hand[0], hand[1] + 0.07 * s
+            ink_stroke(d, [hand, (lx, ly - lr)], rng, 0.6, max(1, 0.01 * s), ink)
+            if lit > 0:
+                gc = rgb(lan.get("glow", [255, 170, 70])); gs = float(lan.get("strength", 2.0)) * lit
+                for k in range(6, 0, -1):
+                    rr = lr * (1 + k * 0.7)
+                    d.ellipse([lx - rr, ly - rr, lx + rr, ly + rr], fill=gc + (max(2, min(255, int((26 - k * 3) * gs))),))
+            body = rgb(lan.get("color", [255, 214, 140])) if lit > 0 else ink
+            d.ellipse([lx - lr, ly - lr * 1.25, lx + lr, ly + lr * 1.25], fill=body)
+            ink_stroke(d, [(lx - lr, ly - lr * 1.25), (lx + lr, ly - lr * 1.25)], rng, 0.6, max(1, 0.012 * s), ink)
         ink_stroke(d, [P(0, -0.78), P(0, -0.82)], rng, 0.8, 0.06 * s, ink)
         hx, hy = P(0, -0.885); hr = 0.078 * s
         d.ellipse([hx - hr, hy - hr, hx + hr, hy + hr], fill=ink)
@@ -428,8 +566,10 @@ class Renderer:
     def render(self, t, k):
         rng = random.Random(1000 + k); nrng = np.random.default_rng(500 + k)
         img = self.background(t, nrng)
-        for L in self.sc.get("layers", []):
-            img = self.draw_layer(img, L, t, rng)
+        layers = self.sc.get("layers", [])
+        for L in layers:
+            if not L.get("screen"):                          # world layers (camera applies)
+                img = self.draw_layer(img, L, t, rng)
         cam = self.sc.get("camera")
         if cam:
             z = float(val(cam.get("zoom", 1.0), t))
@@ -438,6 +578,9 @@ class Renderer:
                 cw, ch = self.W / z, self.H / z
                 x0 = min(max(0.0, cx - cw / 2), self.W - cw); y0 = min(max(0.0, cy - ch / 2), self.H - ch)
                 img = img.crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch))).resize((self.W, self.H), Image.BILINEAR)
+        for L in layers:
+            if L.get("screen"):                              # screen layers: subtitles, clocks, titles (no camera)
+                img = self.draw_layer(img, L, t, rng)
         out = img.convert("RGB")
         if self.paper_on:
             out = Image.blend(out, ImageChops.multiply(out, self.paper), self.paper_mix)
@@ -451,42 +594,47 @@ def load_scene(path) -> tuple[dict, Path]:
     return json.loads(p.read_text(encoding="utf-8")), p.parent
 
 
-def render_video(scene_path, out, on_progress=None) -> str:
-    """Render a scene file (single scene or {"scenes":[...]}) to MP4."""
+def render_video(scene_path, out, on_progress=None, gpu: bool = False) -> str:
+    """Render a scene file (single scene or {"scenes":[...]}) to MP4, streaming frames to ffmpeg."""
     doc, base = load_scene(scene_path)
     scenes = doc["scenes"] if "scenes" in doc else [doc]
     shared = {k: v for k, v in doc.items() if k in ("size", "fps", "on_twos", "style")}
-    tmp = Path(tempfile.mkdtemp(prefix="afc_draw_"))
-    frame_i = 0
     fps = int(shared.get("fps", scenes[0].get("fps", 24)))
+    W, H = shared.get("size", scenes[0].get("size", [1920, 1080]))
+    args = [FFMPEG, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-framerate", str(fps), "-i", "-"]
+    audio = doc.get("audio")
+    if audio:
+        ap = str(base / audio) if not os.path.isabs(audio) else audio
+        args += ["-i", ap, "-shortest", "-c:a", "aac", "-b:a", "192k"]
+    if gpu:
+        args += ["-c:v", "h264_nvenc", "-preset", "p7", "-rc", "vbr", "-cq", "17", "-b:v", "0"]
+    else:
+        args += ["-c:v", "libx264", "-preset", "medium", "-crf", "17"]
+    args += ["-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
+    enc = subprocess.Popen(args, stdin=subprocess.PIPE)
     try:
         for si, sc in enumerate(scenes):
             sc = {**shared, **sc}
             R = Renderer(sc, base)
             dur = float(sc.get("duration", 4.0)); step = 2 if R.on_twos else 1
             n = int(round(dur * R.fps)); fade = float(sc.get("fade_in", 0)); fout = float(sc.get("fade_out", 0))
+            fade_img = R.black if sc.get("fade_to", "paper") == "black" else R.paper
             k = 0
             while k < n:
                 t = k / R.fps
                 im = R.render(t, k)
                 if fade and t < fade:
-                    im = Image.blend(R.paper, im, t / fade)
+                    im = Image.blend(fade_img, im, t / fade)
                 if fout and t > dur - fout:
-                    im = Image.blend(im, R.paper, (t - (dur - fout)) / fout)
+                    im = Image.blend(im, fade_img, min(1.0, (t - (dur - fout)) / fout))
+                data = im.tobytes()
                 for _ in range(min(step, n - k)):
-                    im.save(tmp / f"f_{frame_i:05d}.png"); frame_i += 1
+                    enc.stdin.write(data)
                 k += step
                 if on_progress and k % 24 == 0:
                     on_progress(si, len(scenes), t, dur)
-        args = ["-framerate", str(fps), "-i", str(tmp / "f_%05d.png")]
-        audio = doc.get("audio")
-        if audio:
-            ap = str(base / audio) if not os.path.isabs(audio) else audio
-            args += ["-i", ap, "-shortest", "-c:a", "aac", "-b:a", "192k"]
-        args += ["-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", str(out)]
-        ffmpeg(args)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        enc.stdin.close(); enc.wait()
     return str(out)
 
 

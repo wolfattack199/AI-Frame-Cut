@@ -45,29 +45,115 @@ def _device():
 
 
 # ------------------------------------------------------------------- image
+_PIPES = {}
+def _image_pipe(model: str, img2img: bool):
+    """Cached pipelines so a script can generate many images without reloading (~4 s each)."""
+    import torch
+    from diffusers import DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
+    key = (model, img2img)
+    if key not in _PIPES:
+        dev = _device(); dtype = torch.float16 if dev == "cuda" else torch.float32
+        cls = StableDiffusionImg2ImgPipeline if img2img else StableDiffusionPipeline
+        pipe = cls.from_pretrained(model, torch_dtype=dtype, safety_checker=None, requires_safety_checker=False)
+        pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config, algorithm_type="dpmsolver++", use_karras_sigmas=True, final_sigmas_type="sigma_min")
+        pipe = pipe.to(dev); pipe.set_progress_bar_config(disable=True)
+        _PIPES[key] = pipe
+    return _PIPES[key]
+
+
+def _inpaint_pipe(model: str):
+    """Inpainting with any SD1.5 checkpoint (diffusers falls back to masked img2img for 4-channel UNets)."""
+    import torch
+    from diffusers import DPMSolverMultistepScheduler, StableDiffusionInpaintPipeline
+    key = (model, "inpaint")
+    if key not in _PIPES:
+        dev = _device(); dtype = torch.float16 if dev == "cuda" else torch.float32
+        pipe = StableDiffusionInpaintPipeline.from_pretrained(model, torch_dtype=dtype, safety_checker=None, requires_safety_checker=False)
+        pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config, algorithm_type="dpmsolver++", use_karras_sigmas=True, final_sigmas_type="sigma_min")
+        pipe = pipe.to(dev); pipe.set_progress_bar_config(disable=True)
+        _PIPES[key] = pipe
+    return _PIPES[key]
+
+
+def inpaint_image(prompt: str, init: str, mask: str, out: str, negative: str = NEG_DEFAULT, steps: int = 30,
+                  guidance: float = 7.5, seed: int | None = None, strength: float = 0.9,
+                  model: str = DEFAULT_IMAGE_MODEL) -> str:
+    """Repaint only the white area of `mask` (e.g. a mouth or the eyes) — the rest of `init` stays pixel-identical.
+    This is how to make matching avatar states (talking / blink) from one drawing."""
+    _need_ai("inpaint")
+    import numpy as np
+    import torch
+    from PIL import Image
+    src = Image.open(init).convert("RGB"); W, H = (src.width // 8) * 8, (src.height // 8) * 8
+    src = src.resize((W, H), Image.LANCZOS); m = Image.open(mask).convert("L").resize((W, H), Image.NEAREST)
+    pipe = _inpaint_pipe(model)
+    s = seed if seed is not None else int.from_bytes(os.urandom(4), "little")
+    g = torch.Generator(_device()).manual_seed(s)
+    img = pipe(prompt, image=src, mask_image=m, negative_prompt=negative, num_inference_steps=steps,
+               guidance_scale=guidance, strength=strength, generator=g, width=W, height=H).images[0]
+    # hard-composite: only masked pixels change
+    mm = np.asarray(m).astype(np.float32)[..., None] / 255.0
+    res = (np.asarray(img).astype(np.float32) * mm + np.asarray(src).astype(np.float32) * (1 - mm)).astype(np.uint8)
+    Image.fromarray(res).save(out)
+    return out
+
+
+def remove_background(image: str, out: str) -> str:
+    """Cut a subject out onto transparency (rembg / U2-Net). For avatars, stickers, PNGtuber states."""
+    _need_ai("cutout")
+    from PIL import Image
+    from rembg import remove
+    im = Image.open(image).convert("RGBA")
+    remove(im).save(out)
+    return out
+
+
 def generate_image(prompt: str, out: str, negative: str = NEG_DEFAULT, width: int = 768, height: int = 512,
                    steps: int = 28, guidance: float = 7.0, seed: int | None = None,
-                   model: str = DEFAULT_IMAGE_MODEL, count: int = 1) -> list[str]:
+                   model: str = DEFAULT_IMAGE_MODEL, count: int = 1,
+                   init: str | None = None, strength: float = 0.6) -> list[str]:
+    """Text-to-image, or image-to-image when `init` is given (`strength` 0..1 = how much to change).
+
+    img2img is how you keep a consistent world across many images: generate one key painting,
+    then derive others from it (same scene at dusk, a closer view, a variant) — and it doubles as
+    a "hires fix": upscale a small render, then img2img at the big size with strength ~0.3."""
     _need_ai("imagine")
     import torch
-    from diffusers import DPMSolverMultistepScheduler, StableDiffusionPipeline
+    from PIL import Image
     dev = _device()
-    dtype = torch.float16 if dev == "cuda" else torch.float32
-    pipe = StableDiffusionPipeline.from_pretrained(model, torch_dtype=dtype, safety_checker=None, requires_safety_checker=False)
-    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config, algorithm_type="dpmsolver++", use_karras_sigmas=True, final_sigmas_type="sigma_min")
-    pipe = pipe.to(dev)
-    pipe.set_progress_bar_config(disable=True)
+    pipe = _image_pipe(model, init is not None)
     width, height = (max(256, (width // 8) * 8), max(256, (height // 8) * 8))
     outs = []
     for i in range(count):
         s = (seed + i) if seed is not None else int.from_bytes(os.urandom(4), "little")
         g = torch.Generator(dev).manual_seed(s)
-        img = pipe(prompt, negative_prompt=negative, width=width, height=height,
-                   num_inference_steps=steps, guidance_scale=guidance, generator=g).images[0]
+        if init is not None:
+            src = Image.open(init).convert("RGB").resize((width, height), Image.LANCZOS)
+            img = pipe(prompt, image=src, strength=strength, negative_prompt=negative,
+                       num_inference_steps=steps, guidance_scale=guidance, generator=g).images[0]
+        else:
+            img = pipe(prompt, negative_prompt=negative, width=width, height=height,
+                       num_inference_steps=steps, guidance_scale=guidance, generator=g).images[0]
         p = out if count == 1 else str(Path(out).with_name(f"{Path(out).stem}_{i + 1}{Path(out).suffix}"))
         img.save(p)
         outs.append(f"{p}  (seed {s})")
     return outs
+
+
+_DEPTH = {}
+def depth_map(image: str, out: str, model: str = "depth-anything/Depth-Anything-V2-Small-hf") -> str:
+    """Estimate a depth map (white = near) for a painting so `draw` can add real parallax."""
+    _need_ai("depth")
+    import numpy as np
+    from PIL import Image
+    from transformers import pipeline
+    if model not in _DEPTH:
+        _DEPTH[model] = pipeline("depth-estimation", model=model, device=0 if _device() == "cuda" else -1)
+    im = Image.open(image).convert("RGB")
+    d = _DEPTH[model](im)["depth"]                       # PIL image, relative depth
+    a = np.asarray(d, np.float32); a = (a - a.min()) / max(1e-6, a.max() - a.min())
+    Image.fromarray((a * 255).astype(np.uint8)).resize(im.size, Image.BILINEAR).save(out)
+    return out
 
 
 # ------------------------------------------------------------------- music

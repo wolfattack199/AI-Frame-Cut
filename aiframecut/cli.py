@@ -601,8 +601,46 @@ def cmd_imagine(a):
     print(f"generating {a.count} image(s) on the GPU ({a.width}x{a.height}, {a.steps} steps)... first run downloads the model (~2 GB)")
     for line in generate_image(a.prompt, out, negative=(a.negative if a.negative is not None else NEG_DEFAULT),
                                width=a.width, height=a.height, steps=a.steps, guidance=a.guidance,
-                               seed=a.seed, model=a.model, count=a.count):
+                               seed=a.seed, model=a.model, count=a.count, init=a.init, strength=a.strength):
         print("  ->", line)
+
+
+def cmd_inpaint(a):
+    """Repaint only the masked region of an image (for matching avatar states, fixes, edits)."""
+    from .gen import NEG_DEFAULT, inpaint_image
+    out = a.out or default_out(a.image, "_inpaint.png")
+    print("  ->", inpaint_image(a.prompt, a.image, a.mask, out, negative=(a.negative if a.negative is not None else NEG_DEFAULT),
+                                steps=a.steps, guidance=a.guidance, seed=a.seed, strength=a.strength, model=a.model))
+
+
+def cmd_cutout(a):
+    """Remove the background (subject onto transparency)."""
+    from .gen import remove_background
+    out = a.out or default_out(a.image, "_cutout.png")
+    print("  ->", remove_background(a.image, out))
+
+
+def cmd_critique(a):
+    """Visible AI-tells report (hands, eyes, text, nonsense objects, sheen) with reasons and fixes."""
+    from .critique import critique
+    for img in a.images:
+        critique(img, json_out=(a.json if len(a.images) == 1 else None), with_detect=not a.no_detect, model_id=a.model)
+
+
+def cmd_detect(a):
+    """Local AI-vs-human pixel classifier: see what a detector site would say before you post."""
+    from .critique import detect
+    for img in a.images:
+        r = detect(img)
+        print(f"  {r['label']:5s}  AI {r['ai']:.0%}  human {r['human']:.0%}   {img}")
+    print("  (pixel-statistics classifier, like ZeroGPT/Hive. Raw generated images score high by nature.)")
+
+
+def cmd_depth(a):
+    """Depth map for a painting (white = near), used by draw's sprite `depth` for parallax."""
+    from .gen import depth_map
+    out = a.out or default_out(a.image, "_depth.png")
+    print("  ->", depth_map(a.image, out))
 
 
 def cmd_compose(a):
@@ -642,7 +680,7 @@ def cmd_draw(a):
 
     def prog(si, n, t, dur):
         print(f"  scene {si + 1}/{n}  {t:5.1f}/{dur:.1f}s", flush=True)
-    render_video(a.scene, out, on_progress=prog)
+    render_video(a.scene, out, on_progress=prog, gpu=a.gpu)
     print(f"drawn -> {out}")
 
 
@@ -867,7 +905,32 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--steps", type=int, default=28); sp.add_argument("--guidance", type=float, default=7.0)
     sp.add_argument("--seed", type=int); sp.add_argument("--count", type=int, default=1)
     sp.add_argument("--model", default="Lykon/dreamshaper-8", help="any diffusers SD1.5 checkpoint on Hugging Face")
+    sp.add_argument("--init", help="image-to-image: start from this picture (keeps its composition)")
+    sp.add_argument("--strength", type=float, default=0.6, help="with --init: 0.2 subtle .. 0.8 heavy change")
     sp.set_defaults(func=cmd_imagine)
+
+    sp = sub.add_parser("inpaint", help="repaint only the white area of a mask (matching avatar states, fixes; needs the ai extra)")
+    sp.add_argument("image"); sp.add_argument("mask", help="white = repaint, black = keep"); sp.add_argument("prompt"); sp.add_argument("-o", "--out")
+    sp.add_argument("--negative"); sp.add_argument("--steps", type=int, default=30); sp.add_argument("--guidance", type=float, default=7.5)
+    sp.add_argument("--seed", type=int); sp.add_argument("--strength", type=float, default=0.9); sp.add_argument("--model", default="Lykon/dreamshaper-8")
+    sp.set_defaults(func=cmd_inpaint)
+
+    sp = sub.add_parser("cutout", help="remove the background: subject onto transparency (needs the ai extra)")
+    sp.add_argument("image"); sp.add_argument("-o", "--out")
+    sp.set_defaults(func=cmd_cutout)
+
+    sp = sub.add_parser("critique", help="does this look AI-made, and why? visible-tells checklist with fixes (local vision model; needs the ai extra)")
+    sp.add_argument("images", nargs="+"); sp.add_argument("--json", help="also write the report as JSON")
+    sp.add_argument("--no-detect", dest="no_detect", action="store_true", help="skip the pixel-statistics detector line")
+    sp.add_argument("--model", help="vision model (default Qwen/Qwen2-VL-2B-Instruct; try Qwen/Qwen2.5-VL-3B-Instruct for fewer misses)")
+    sp.set_defaults(func=cmd_critique)
+
+    sp = sub.add_parser("detect", help="local AI-vs-human image classifier (what ZeroGPT-style sites do; needs the ai extra)")
+    sp.add_argument("images", nargs="+"); sp.set_defaults(func=cmd_detect)
+
+    sp = sub.add_parser("depth", help="estimate a depth map for an image (for parallax in draw; needs the ai extra)")
+    sp.add_argument("image"); sp.add_argument("-o", "--out")
+    sp.set_defaults(func=cmd_depth)
 
     sp = sub.add_parser("compose", help="generate music from a text prompt (MusicGen on your GPU; needs the ai extra)")
     sp.add_argument("prompt"); sp.add_argument("-o", "--out", help=".wav or .mp3")
@@ -893,6 +956,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("scene", help="scene .json (single scene or {\"scenes\": [...]})")
     sp.add_argument("-o", "--out")
     sp.add_argument("--frame", type=float, help="render one PNG at this time instead of the video (fast preview)")
+    sp.add_argument("--gpu", action="store_true", help="encode with NVIDIA NVENC")
     sp.set_defaults(func=cmd_draw)
 
     sp = sub.add_parser("captions", help="burn captions into the video from an .srt (auto-transcribes if needed)")
