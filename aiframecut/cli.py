@@ -636,6 +636,18 @@ def cmd_detect(a):
     print("  (pixel-statistics classifier, like ZeroGPT/Hive. Raw generated images score high by nature.)")
 
 
+def cmd_debug(a):
+    """Bug recording -> report.md timeline with OCR'd on-screen text, narration, flagged error frames."""
+    from .debugvid import debug_video
+    print(f"reading {a.video} — extracting screens, reading on-screen text, transcribing narration...")
+    def prog(kept, total, t, flags):
+        print(f"  screen {kept:3d}  @ {t:6.1f}s  {'⚠ ' + ', '.join(flags[:3]) if flags else ''}", flush=True)
+    rep = debug_video(a.video, out=a.out, every=a.every, threshold=a.threshold, max_frames=a.max_frames,
+                      ocr=not a.no_ocr, transcribe=not a.no_transcribe, width=a.width, on_progress=prog)
+    print(f"report -> {rep}")
+    print("  read it, then open the 'Look here first' frames.")
+
+
 def cmd_depth(a):
     """Depth map for a painting (white = near), used by draw's sprite `depth` for parallax."""
     from .gen import depth_map
@@ -927,6 +939,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("detect", help="local AI-vs-human image classifier (what ZeroGPT-style sites do; needs the ai extra)")
     sp.add_argument("images", nargs="+"); sp.set_defaults(func=cmd_detect)
+
+    sp = sub.add_parser("debug", help="DEBUG FROM A SCREEN RECORDING: OCR every distinct screen, transcribe narration, flag error frames -> report.md")
+    sp.add_argument("video"); sp.add_argument("-o", "--out", help="output folder (default: <video>_debug next to the video)")
+    sp.add_argument("--every", type=float, default=2.0, help="seconds between sampled screens (default 2)")
+    sp.add_argument("--threshold", type=float, default=0.25, help="scene-change sensitivity (lower = more)")
+    sp.add_argument("--max-frames", dest="max_frames", type=int, default=90)
+    sp.add_argument("--width", type=int, default=1280, help="frame width saved for reading (1280 keeps log text legible)")
+    sp.add_argument("--no-ocr", dest="no_ocr", action="store_true"); sp.add_argument("--no-transcribe", dest="no_transcribe", action="store_true")
+    sp.set_defaults(func=cmd_debug)
 
     sp = sub.add_parser("depth", help="estimate a depth map for an image (for parallax in draw; needs the ai extra)")
     sp.add_argument("image"); sp.add_argument("-o", "--out")

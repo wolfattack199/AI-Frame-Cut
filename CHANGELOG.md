@@ -4,6 +4,16 @@ All notable changes to **AI Frame Cut**. Newest release on top.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/); this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.9.1] — 2026-09-21
+
+### Added
+- **`debug`** — debug from a screen recording. Extracts every distinct screen (interval + scene
+  changes, near-duplicates dropped), **reads the on-screen text** with the local vision model
+  (error messages, logs, console), transcribes narration, flags frames and spoken lines with
+  error words, and writes `report.md` + `frames/` + `ocr.json`. Built so an AI agent can "watch"
+  a bug video: read one file, open only the flagged frames.
+- SKILL.md: the debugging workflow, so any Claude Code project can use it.
+
 ## [0.9.0] — 2026-09-19
 
 ### Added — honesty tools

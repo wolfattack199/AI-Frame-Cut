@@ -1,6 +1,6 @@
 ---
 name: ai-frame-cut
-description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, YouTube thumbnails, vertical Shorts, long-video splitting, and quick previews so the user can watch progress. It can also CREATE from scratch: hand-drawn-style animation from a JSON scene (draw), and — with the optional GPU extra — generate images (imagine), music (compose), and cloned-voice narration from the user's own voice (clone). It inspects the video first (contact sheet + review checklist) before asking how to edit, and can grab a PUBLIC YouTube / Steam / Roblox profile avatar + name (no API key). Optional NVIDIA --gpu encoding. Use whenever the user wants to look at a video and make it better quickly, even 8-minute clips.
+description: Fast, local, no-API-key video editing for gameplay, screen recordings, talking-heads, and montages. SEE any video as a labeled contact sheet or frames at any frame rate, HEAR it via on-device Whisper transcription (with spoken "edit this out" detection), and EDIT it with one-line commands — cinematic color grade, animated intro/outro title cards (optionally with a channel avatar + Subscribe/Like call-to-action), background music with auto-ducking, keyframe-instant trims, highlight cuts, concat, speed, resize, gif, voice/audio effects, YouTube thumbnails, vertical Shorts, long-video splitting, and quick previews so the user can watch progress. It can also CREATE from scratch: hand-drawn-style animation from a JSON scene (draw), and — with the optional GPU extra — generate images (imagine), music (compose), and cloned-voice narration from the user's own voice (clone). It inspects the video first (contact sheet + review checklist) before asking how to edit, and can grab a PUBLIC YouTube / Steam / Roblox profile avatar + name (no API key). Optional NVIDIA --gpu encoding. ALSO A DEBUGGING TOOL: when the user shares a screen recording of a bug, crash, glitch or 'look what happens' in their app, game, mod, launcher or website, run `debug` — it OCRs every distinct screen (error messages, logs, console output), transcribes their narration, flags error frames, and writes one report.md the agent can read, then open only the flagged frames. Use whenever the user wants to look at a video, make it better quickly, or wants you to WATCH a recording and find what went wrong.
 ---
 
 # AI Frame Cut
@@ -68,6 +68,7 @@ whether NVIDIA `--gpu` encoding is available.
 | `draw SCENE.json [--frame T]` | **hand-drawn animation from a JSON scene** you write — shapes, paths, text, sprites, a silhouette character, petals/clouds/birds/speedlines, keyframed motion, camera. `--frame T` renders one PNG for fast previews. See `examples/dawn.json` |
 | `imagine "prompt" [--width --height --steps --seed --count --negative]` | **generate an image** locally (Stable Diffusion on the GPU). Needs `uv sync --extra ai` |
 | `compose "prompt" [--seconds 10] [-o out.mp3]` | **generate music** locally (MusicGen, up to 30s). Needs the ai extra |
+| `debug REC.mp4` | **debug from a screen recording**: OCR every distinct screen, transcribe narration, flag error frames → `report.md` + `frames/` |
 | `clone --ref VOICE.wav --text "..." --consent` | **speak text in a cloned voice** from the user's OWN recordings (F5-TTS). `--consent` is required. Needs the ai extra |
 | `grade VIDEO [--look cinematic] [--height 1080] [--letterbox 0.07] [--fps] [--gpu]` | one-word color grade |
 | `title --text "..." [--sub "..."] [--cta "SUBSCRIBE & LIKE"] [--logo avatar.png] [--seconds 6] [--style horror] [--size 1920x1080] [--letterbox 0.07] [--silent] -o OUT.mp4` | animated intro/outro card — add `--logo` for a circular channel avatar and `--cta` for a Subscribe/Like pill |
@@ -170,6 +171,30 @@ with `--frame T` (fast) before rendering the whole thing. `examples/dawn.json` i
 Honesty for the user: say "generated locally on your GPU" and be clear about the quality
 ceilings above. Licences: DreamShaper is OpenRAIL-M; F5-TTS and MusicGen **weights are
 CC-BY-NC** (personal use fine — flag it if they plan to monetize).
+
+## Debugging from a screen recording (any project)
+
+When the user gives you a video of a bug ("watch this", "here's what happens", a `.mp4` from
+Xbox Game Bar / OBS / Snipping Tool), do NOT ask for screenshots. Run:
+
+```bash
+uv run --directory ~/.claude/skills/ai-frame-cut aiframecut debug "C:/path/to/recording.mp4"
+```
+
+It writes `<video>_debug/report.md` next to the video. Then:
+
+1. **Read `report.md`.** "Look here first" lists the frames whose on-screen text contains
+   exceptions / errors / crashes, with timestamps; "The user said" lists narration with error
+   words (they often read the error out loud).
+2. **Open the flagged frames** with your image reader (`frames/f_NNN_MMmSSs.png`) to confirm the
+   exact class names, line numbers and messages — the OCR is a small local model and can
+   misread a character; the frame is the truth.
+3. Correlate with their code: the timeline tells you what they clicked (narration) and what the
+   screen showed at that second.
+4. Long recording? `--every 1` samples denser; `--max-frames 150` raises the cap; `--no-ocr` is
+   instant if you only need the timeline. ~5–10 s per screen with OCR on a GPU.
+
+Needs the `ai` extra for OCR (`uv sync --extra ai`); without it you still get frames + narration.
 
 ## Rules that keep output correct
 
